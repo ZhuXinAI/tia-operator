@@ -82,36 +82,42 @@ Scripts can be exported and imported as JSON from Settings.
 
 ## Release Downloads
 
-This repo includes `.github/workflows/release.yml`. Pushing a tag like `v0.1.0` builds release artifacts for macOS, Windows, and Linux and uploads them to a GitHub Release through `tauri-apps/tauri-action`.
+This repo includes `.github/workflows/release.yml`. Pushing a tag like `v0.1.0` builds release artifacts for Windows and macOS Apple Silicon and uploads them to a GitHub Release through `tauri-apps/tauri-action`.
 
 Before publishing:
 
-1. Replace `OWNER` in `package.json` and `src-tauri/tauri.conf.json`.
-2. Replace `REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY` in `src-tauri/tauri.conf.json`.
-3. Add updater signing secrets to GitHub:
+1. Keep `TAURI_UPDATER_PUBLIC_KEY`, `TAURI_SIGNING_PRIVATE_KEY`, and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` configured in GitHub Actions secrets.
+2. Push a version tag:
    - `TAURI_UPDATER_PUBLIC_KEY`
    - `TAURI_SIGNING_PRIVATE_KEY`
    - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
-4. Push a version tag:
-
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The release workflow runs `scripts/prepare-release-config.mjs`, which replaces the updater endpoint with the current GitHub repository and requires updater signing secrets before publishing.
+The release workflow runs `scripts/prepare-release-config.mjs`, which sets the updater endpoint to the current GitHub repository and requires updater signing secrets before publishing.
+
+macOS GitHub releases can be built without Apple signing, but public downloads should be Developer ID signed and notarized to avoid Gatekeeper blocking. To enable notarized macOS arm64 artifacts, add these GitHub Actions secrets:
+
+- `APPLE_CERTIFICATE` - base64-encoded Developer ID Application `.p12`
+- `APPLE_CERTIFICATE_PASSWORD`
+- `KEYCHAIN_PASSWORD`
+- `APPLE_ID`
+- `APPLE_PASSWORD` - app-specific password
+- `APPLE_TEAM_ID`
 
 ## Auto Update Readiness
 
 The Tauri updater plugin is registered in Rust and permitted in `src-tauri/capabilities/default.json`.
 
-The app is configured to check this updater endpoint after you replace `OWNER`:
+The app is configured to check this updater endpoint:
 
 ```text
-https://github.com/OWNER/tia-operator/releases/latest/download/latest.json
+https://github.com/ZhuXinAI/tia-operator/releases/latest/download/latest.json
 ```
 
-Tauri updater signatures require a real keypair. Generate one with:
+Tauri updater signatures require the matching private key in GitHub Actions secrets. Generate a replacement keypair only if you intentionally rotate updater signing:
 
 ```bash
 pnpm tauri signer generate

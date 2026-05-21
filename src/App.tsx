@@ -1,7 +1,41 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import {
+  Database,
+  Download,
+  Keyboard,
+  LayoutDashboard,
+  MonitorCog,
+  MousePointer2,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  Radio,
+  Save,
+  Settings as SettingsIcon,
+  SlidersHorizontal,
+  Square,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import "./App.css";
 import { operatorApi } from "./api/operatorApi";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+} from "./components/ui/sidebar";
 import type {
   AppSettings,
   AppStatus,
@@ -48,6 +82,7 @@ const defaultSettings: AppSettings = {
   defaultCountdownMs: 3000,
   emergencyStopShortcut: "CommandOrControl+Alt+Escape",
   skipMouseMoveNoise: false,
+  recordMouseMoves: false,
   showReplayOverlay: true,
 };
 
@@ -397,60 +432,86 @@ function App() {
   };
 
   return (
-    <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-block">
-          <div className="brand-mark">TO</div>
-          <div>
-            <h1>TIA Operator</h1>
-            <p>Local desktop macros</p>
+    <SidebarProvider>
+      <Sidebar collapsible="icon">
+        <SidebarHeader>
+          <div className="brand-block">
+            <div className="brand-mark">TO</div>
+            <div className="brand-copy">
+              <h1>TIA Operator</h1>
+              <p>Local desktop macros</p>
+            </div>
           </div>
-        </div>
+        </SidebarHeader>
 
-        <nav className="nav-stack" aria-label="Primary">
-          <button
-            className={view === "dashboard" ? "nav-item active" : "nav-item"}
-            type="button"
-            onClick={() => setView("dashboard")}
-          >
-            Dashboard
-          </button>
-          <button
-            className={view === "recorder" ? "nav-item active" : "nav-item"}
-            type="button"
-            onClick={() => setView("recorder")}
-          >
-            Recorder
-          </button>
-          <button
-            className={view === "settings" ? "nav-item active" : "nav-item"}
-            type="button"
-            onClick={() => setView("settings")}
-          >
-            Settings
-          </button>
-        </nav>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={view === "dashboard"}
+                    tooltip="Dashboard"
+                    onClick={() => setView("dashboard")}
+                  >
+                    <LayoutDashboard aria-hidden="true" />
+                    <span>Dashboard</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={view === "recorder"}
+                    tooltip="Recorder"
+                    onClick={() => setView("recorder")}
+                  >
+                    <Radio aria-hidden="true" />
+                    <span>Recorder</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={view === "settings"}
+                    tooltip="Settings"
+                    onClick={() => setView("settings")}
+                  >
+                    <SettingsIcon aria-hidden="true" />
+                    <span>Settings</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
 
-        <div className={`mode-pill ${status.state}`}>
-          <span aria-hidden="true" />
-          {stateLabel(status.state)}
-        </div>
-        <p className="shortcut-note">Stop: {status.emergencyStopShortcut}</p>
-      </aside>
+        <SidebarFooter>
+          <div className={`mode-pill ${status.state}`}>
+            <span aria-hidden="true" />
+            <strong>{stateLabel(status.state)}</strong>
+          </div>
+          <p className="shortcut-note">Stop: {status.emergencyStopShortcut}</p>
+        </SidebarFooter>
+      </Sidebar>
 
-      <section className="workspace">
+      <SidebarInset>
+        <section className="workspace">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">Private by default</p>
-            <h2>{viewTitle(view, selectedScript)}</h2>
+          <div className="topbar-title">
+            <SidebarTrigger className="sidebar-trigger" />
+            <div>
+              <p className="eyebrow">Private by default</p>
+              <h2>{viewTitle(view, selectedScript)}</h2>
+            </div>
           </div>
           <div className="topbar-actions">
             {status.state === "replaying" ? (
               <button className="danger-button" type="button" onClick={() => void operatorApi.stopReplay()}>
+                <Square aria-hidden="true" className="button-icon" />
                 Stop Replay
               </button>
             ) : null}
             <button className="primary-button" type="button" onClick={() => void startRecording()}>
+              <Plus aria-hidden="true" className="button-icon" />
               Record New Script
             </button>
           </div>
@@ -533,8 +594,9 @@ function App() {
             onDeleteAllScripts={deleteAllScripts}
           />
         ) : null}
-      </section>
-    </main>
+        </section>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 
@@ -601,6 +663,7 @@ function Dashboard({
           onClick={() => void onCreateDemo()}
           disabled={busyAction === "demo-script"}
         >
+          <Plus aria-hidden="true" className="button-icon" />
           Add Sample
         </button>
       </div>
@@ -639,9 +702,11 @@ function Dashboard({
               </dl>
               <div className="card-actions">
                 <button type="button" onClick={() => void onReplay(script.id)}>
+                  <Play aria-hidden="true" className="button-icon" />
                   Replay
                 </button>
                 <button type="button" onClick={() => void onOpen(script.id)}>
+                  <Pencil aria-hidden="true" className="button-icon" />
                   Edit
                 </button>
                 <button
@@ -649,6 +714,7 @@ function Dashboard({
                   type="button"
                   onClick={() => void onDelete(script.id)}
                 >
+                  <Trash2 aria-hidden="true" className="button-icon" />
                   Delete
                 </button>
               </div>
@@ -720,12 +786,15 @@ function RecorderPanel({
             onClick={() => void onStart()}
             disabled={!canStart || busyAction === "start-recording"}
           >
+            <Radio aria-hidden="true" className="button-icon" />
             Start
           </button>
           <button type="button" onClick={onPause} disabled={!isRecording}>
+            <Pause aria-hidden="true" className="button-icon" />
             Pause
           </button>
           <button type="button" onClick={onResume} disabled={!isPaused}>
+            <Play aria-hidden="true" className="button-icon" />
             Resume
           </button>
           <button
@@ -734,6 +803,7 @@ function RecorderPanel({
             onClick={() => void onStop()}
             disabled={!isRecording && !isPaused}
           >
+            <Save aria-hidden="true" className="button-icon" />
             Stop and Save
           </button>
           <button
@@ -742,6 +812,7 @@ function RecorderPanel({
             onClick={onDiscard}
             disabled={!isRecording && !isPaused}
           >
+            <Trash2 aria-hidden="true" className="button-icon" />
             Discard
           </button>
         </div>
@@ -827,19 +898,25 @@ function ScriptDetail({
             onClick={() => void onSave()}
             disabled={busyAction === "save-detail"}
           >
+            <Save aria-hidden="true" className="button-icon" />
             Save
           </button>
           <button type="button" onClick={onReplay}>
+            <Play aria-hidden="true" className="button-icon" />
             Replay
           </button>
           <button className="ghost-danger" type="button" onClick={onDelete}>
+            <Trash2 aria-hidden="true" className="button-icon" />
             Delete
           </button>
         </div>
       </div>
 
       <div className="panel side-panel">
-        <h3>Replay Options</h3>
+        <h3>
+          <SlidersHorizontal aria-hidden="true" className="section-icon" />
+          Replay Options
+        </h3>
         <label>
           Speed
           <input
@@ -899,7 +976,10 @@ function ScriptDetail({
       </div>
 
       <div className="panel side-panel">
-        <h3>Shortcut</h3>
+        <h3>
+          <Keyboard aria-hidden="true" className="section-icon" />
+          Shortcut
+        </h3>
         <p className="current-shortcut">
           {shortcut?.accelerator ?? "No shortcut assigned"}
         </p>
@@ -909,6 +989,7 @@ function ScriptDetail({
         />
         <div className="button-row">
           <button type="button" onClick={() => void onBindShortcut()}>
+            <Save aria-hidden="true" className="button-icon" />
             Assign
           </button>
           <button
@@ -917,6 +998,7 @@ function ScriptDetail({
             onClick={() => void onUnbindShortcut()}
             disabled={!shortcut}
           >
+            <Trash2 aria-hidden="true" className="button-icon" />
             Remove
           </button>
         </div>
@@ -924,7 +1006,10 @@ function ScriptDetail({
 
       <div className="panel timeline-panel">
         <div className="card-heading-row">
-          <h3>Event Timeline</h3>
+          <h3>
+            <Database aria-hidden="true" className="section-icon" />
+            Event Timeline
+          </h3>
           <span className="badge">{script.eventCount} events</span>
         </div>
         <EventTimeline events={script.events} />
@@ -988,7 +1073,10 @@ function Settings({
   return (
     <section className="settings-grid">
       <div className="panel settings-panel">
-        <h3>Replay Defaults</h3>
+        <h3>
+          <SlidersHorizontal aria-hidden="true" className="section-icon" />
+          Replay Defaults
+        </h3>
         <label>
           Default speed
           <input
@@ -1050,12 +1138,39 @@ function Settings({
           onClick={() => void onSaveSettings()}
           disabled={busyAction === "save-settings"}
         >
+          <Save aria-hidden="true" className="button-icon" />
           Save Settings
         </button>
       </div>
 
       <div className="panel settings-panel">
-        <h3>Platform</h3>
+        <h3>
+          <MousePointer2 aria-hidden="true" className="section-icon" />
+          Recording
+        </h3>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={settings.recordMouseMoves}
+            onChange={(event) =>
+              onSettingsChange({
+                ...settings,
+                recordMouseMoves: event.currentTarget.checked,
+              })
+            }
+          />
+          Record mouse move events
+        </label>
+        <p className="muted-text">
+          Mouse moves are sampled at most every 100ms when this is enabled.
+        </p>
+      </div>
+
+      <div className="panel settings-panel">
+        <h3>
+          <MonitorCog aria-hidden="true" className="section-icon" />
+          Platform
+        </h3>
         <dl className="settings-list">
           <div>
             <dt>OS</dt>
@@ -1089,9 +1204,13 @@ function Settings({
       </div>
 
       <div className="panel settings-panel data-panel">
-        <h3>Data</h3>
+        <h3>
+          <Database aria-hidden="true" className="section-icon" />
+          Data
+        </h3>
         <div className="button-row">
           <button type="button" onClick={() => void onExportScripts()}>
+            <Download aria-hidden="true" className="button-icon" />
             Export All
           </button>
           <button
@@ -1099,6 +1218,7 @@ function Settings({
             type="button"
             onClick={() => void onDeleteAllScripts()}
           >
+            <Trash2 aria-hidden="true" className="button-icon" />
             Delete All
           </button>
         </div>
@@ -1121,6 +1241,7 @@ function Settings({
           onClick={() => void onImportScripts()}
           disabled={!importPayload.trim()}
         >
+          <Upload aria-hidden="true" className="button-icon" />
           Import
         </button>
       </div>

@@ -14,6 +14,8 @@ use uuid::Uuid;
 
 use crate::models::{EventKind, Modifiers, MouseButton, RecorderState, ScriptEvent};
 
+const MOUSE_MOVE_RECORD_INTERVAL_MS: u64 = 100;
+
 #[derive(Debug)]
 pub struct RdevRecorderInner {
     pub status: RecorderState,
@@ -22,6 +24,9 @@ pub struct RdevRecorderInner {
     pub total_paused: Duration,
     pub buffer: Vec<ScriptEvent>,
     pub modifiers: Modifiers,
+    pub record_mouse_moves: bool,
+    pub last_mouse_position: Option<(i32, i32)>,
+    pub last_recorded_mouse_move_ms: Option<u64>,
 }
 
 impl Default for RdevRecorderInner {
@@ -33,6 +38,9 @@ impl Default for RdevRecorderInner {
             total_paused: Duration::ZERO,
             buffer: Vec::new(),
             modifiers: Modifiers::default(),
+            record_mouse_moves: false,
+            last_mouse_position: None,
+            last_recorded_mouse_move_ms: None,
         }
     }
 }
@@ -71,15 +79,39 @@ fn handle_native_event(app: &AppHandle, inner: &Arc<Mutex<RdevRecorderInner>>, e
     };
 
     update_modifiers(&mut guard.modifiers, &event.event_type);
+    if let EventType::MouseMove { x, y } = &event.event_type {
+        guard.last_mouse_position = Some((x.round() as i32, y.round() as i32));
+    }
 
     let timestamp = Instant::now()
         .saturating_duration_since(started_at)
         .saturating_sub(guard.total_paused)
         .as_millis() as u64;
 
-    let Some(script_event) = normalize_event(event, timestamp, guard.modifiers.clone()) else {
+    let Some(mut script_event) = normalize_event(event, timestamp, guard.modifiers.clone()) else {
         return;
     };
+
+    if matches!(script_event.kind, EventKind::MouseDown | EventKind::MouseUp) {
+        if let Some((x, y)) = guard.last_mouse_position {
+            script_event.x = Some(x);
+            script_event.y = Some(y);
+        }
+    }
+
+    if script_event.kind == EventKind::MouseMove {
+        if !guard.record_mouse_moves {
+            return;
+        }
+
+        if let Some(last_timestamp) = guard.last_recorded_mouse_move_ms {
+            if timestamp.saturating_sub(last_timestamp) < MOUSE_MOVE_RECORD_INTERVAL_MS {
+                return;
+            }
+        }
+
+        guard.last_recorded_mouse_move_ms = Some(timestamp);
+    }
 
     guard.buffer.push(script_event.clone());
     let event_count = guard.buffer.len();

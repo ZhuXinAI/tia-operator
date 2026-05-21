@@ -32,6 +32,7 @@ impl InputReplayer for EnigoReplayer {
                 }
             }
             EventKind::MouseDown => {
+                move_to_event_position(&mut enigo, event)?;
                 if let Some(button) = event.button.as_ref().and_then(map_mouse_button) {
                     enigo
                         .button(button, Direction::Press)
@@ -39,6 +40,7 @@ impl InputReplayer for EnigoReplayer {
                 }
             }
             EventKind::MouseUp => {
+                move_to_event_position(&mut enigo, event)?;
                 if let Some(button) = event.button.as_ref().and_then(map_mouse_button) {
                     enigo
                         .button(button, Direction::Release)
@@ -82,6 +84,16 @@ impl InputReplayer for EnigoReplayer {
 
         Ok(())
     }
+}
+
+fn move_to_event_position(enigo: &mut Enigo, event: &ScriptEvent) -> AppResult<()> {
+    if let (Some(x), Some(y)) = (event.x, event.y) {
+        enigo
+            .move_mouse(x, y, Coordinate::Abs)
+            .map_err(replay_error)?;
+    }
+
+    Ok(())
 }
 
 fn replay_error(error: enigo::InputError) -> AppError {

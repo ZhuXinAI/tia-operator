@@ -132,6 +132,8 @@ pub struct AppSettings {
     pub default_countdown_ms: u64,
     pub emergency_stop_shortcut: String,
     pub skip_mouse_move_noise: bool,
+    #[serde(default)]
+    pub record_mouse_moves: bool,
     pub show_replay_overlay: bool,
 }
 
@@ -142,6 +144,7 @@ impl Default for AppSettings {
             default_countdown_ms: 3000,
             emergency_stop_shortcut: "CommandOrControl+Alt+Escape".to_string(),
             skip_mouse_move_noise: false,
+            record_mouse_moves: false,
             show_replay_overlay: true,
         }
     }

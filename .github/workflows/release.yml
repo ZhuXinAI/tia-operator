@@ -3,8 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
-  workflow_dispatch:
+      - "v*.*.*"
 
 permissions:
   contents: write
@@ -16,6 +15,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must match vX.Y.Z, for example v1.0.0."
+            exit 1
+          fi
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -62,19 +69,23 @@ jobs:
         run: cargo check
 
   release:
-    name: Build ${{ matrix.platform }}
+    name: Build ${{ matrix.name }}
     needs: checks
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
-            args: --target universal-apple-darwin
-          - platform: ubuntu-22.04
-            args: ""
-          - platform: windows-latest
-            args: ""
+          - name: windows
+            platform: windows-latest
+            args: --bundles nsis,msi
+            rust-target: x86_64-pc-windows-msvc
+          - name: macos-arm64
+            platform: macos-latest
+            args: --target aarch64-apple-darwin --bundles app,dmg
+            rust-target: aarch64-apple-darwin
     runs-on: ${{ matrix.platform }}
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -93,22 +104,42 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.rust-target }}
 
-      - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+      - name: Import Apple Developer certificate
+        if: matrix.name == 'macos-arm64' && env.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libx11-dev \
-            libxtst-dev \
-            libxi-dev \
-            libxkbcommon-dev
+          if [[ -z "${APPLE_CERTIFICATE_PASSWORD}" || -z "${KEYCHAIN_PASSWORD}" || -z "${APPLE_ID}" || -z "${APPLE_PASSWORD}" || -z "${APPLE_TEAM_ID}" ]]; then
+            echo "APPLE_CERTIFICATE_PASSWORD, KEYCHAIN_PASSWORD, APPLE_ID, APPLE_PASSWORD, and APPLE_TEAM_ID are required when APPLE_CERTIFICATE is set."
+            exit 1
+          fi
+
+          echo "${APPLE_CERTIFICATE}" | base64 --decode > certificate.p12
+          security create-keychain -p "${KEYCHAIN_PASSWORD}" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" build.keychain
+          security import certificate.p12 -k build.keychain -P "${APPLE_CERTIFICATE_PASSWORD}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "${KEYCHAIN_PASSWORD}" build.keychain
+
+          signing_identity="$(security find-identity -v -p codesigning build.keychain | grep 'Developer ID Application' | head -n 1 | sed -E 's/.*\"(.*)\".*/\1/')"
+          if [[ -z "${signing_identity}" ]]; then
+            echo "No Developer ID Application identity was found in APPLE_CERTIFICATE."
+            exit 1
+          fi
+
+          echo "APPLE_SIGNING_IDENTITY=${signing_identity}" >> "${GITHUB_ENV}"
+
+      - name: Warn when macOS notarization secrets are missing
+        if: matrix.name == 'macos-arm64' && env.APPLE_CERTIFICATE == ''
+        run: |
+          echo "::warning::APPLE_CERTIFICATE is not configured. The macOS arm64 artifact will build, but it will not be Developer ID signed or notarized."
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -126,6 +157,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "TIA Operator ${{ github.ref_name }}"

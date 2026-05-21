@@ -81,6 +81,7 @@ export type AppSettings = {
   defaultCountdownMs: number;
   emergencyStopShortcut: string;
   skipMouseMoveNoise: boolean;
+  recordMouseMoves: boolean;
   showReplayOverlay: boolean;
 };
 

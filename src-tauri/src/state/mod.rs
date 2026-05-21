@@ -45,6 +45,8 @@ impl AppState {
     }
 
     pub fn start_recording(&self, app: AppHandle, input: StartRecordingInput) -> AppResult<()> {
+        let settings = self.db.get_settings()?;
+
         {
             let mut mode = self.mode.lock().expect("app mode lock poisoned");
             if *mode != RecorderState::Idle {
@@ -55,7 +57,7 @@ impl AppState {
             *mode = RecorderState::Recording;
         }
 
-        if let Err(error) = self.recorder.start(app, input) {
+        if let Err(error) = self.recorder.start(app, input, settings.record_mouse_moves) {
             self.set_mode(RecorderState::Idle);
             return Err(error);
         }

@@ -27,13 +27,21 @@ impl RecorderService {
         }
     }
 
-    pub fn start(&self, app: AppHandle, input: StartRecordingInput) -> AppResult<()> {
+    pub fn start(
+        &self,
+        app: AppHandle,
+        input: StartRecordingInput,
+        record_mouse_moves: bool,
+    ) -> AppResult<()> {
         {
             let mut guard = self.inner.lock();
             guard.status = RecorderState::Recording;
             guard.started_at = Some(Instant::now());
             guard.paused_at = None;
             guard.total_paused = Duration::ZERO;
+            guard.record_mouse_moves = record_mouse_moves;
+            guard.last_mouse_position = None;
+            guard.last_recorded_mouse_move_ms = None;
             guard.buffer.clear();
         }
 
