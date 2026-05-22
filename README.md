@@ -82,7 +82,7 @@ Scripts can be exported and imported as JSON from Settings.
 
 ## Release Downloads
 
-This repo includes `.github/workflows/release.yml`. Pushing a tag like `v0.1.0` builds release artifacts for Windows and macOS Apple Silicon and uploads them to a GitHub Release through `tauri-apps/tauri-action`.
+This repo includes `.github/workflows/release.yml`. Pushing a tag like `v0.1.1` builds release artifacts for Windows and macOS Apple Silicon and uploads them to a GitHub Release through `tauri-apps/tauri-action`.
 
 Before publishing:
 
@@ -92,8 +92,8 @@ Before publishing:
    - `TAURI_SIGNING_PRIVATE_KEY`
    - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 The release workflow runs `scripts/prepare-release-config.mjs`, which sets the updater endpoint to the current GitHub repository and requires updater signing secrets before publishing.
