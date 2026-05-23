@@ -4,9 +4,13 @@ import { check, type DownloadEvent } from "@tauri-apps/plugin-updater";
 import {
   Database,
   Download,
+  ArrowDown,
+  ArrowUp,
+  GripVertical,
   Keyboard,
+  Languages,
   LayoutDashboard,
-  MonitorCog,
+  ListPlus,
   MousePointer2,
   Pause,
   Pencil,
@@ -165,6 +169,7 @@ function App() {
   const [recordingDescription, setRecordingDescription] = useState("");
   const [detailName, setDetailName] = useState("");
   const [detailDescription, setDetailDescription] = useState("");
+  const [detailEvents, setDetailEvents] = useState<ScriptEvent[]>([]);
   const [shortcutDraft, setShortcutDraft] = useState("CommandOrControl+Alt+1");
   const [replayOptions, setReplayOptions] =
     useState<ReplayOptions>(defaultReplayOptions);
@@ -396,6 +401,7 @@ function App() {
     if (selectedScript) {
       setDetailName(selectedScript.name);
       setDetailDescription(selectedScript.description ?? "");
+      setDetailEvents(selectedScript.events);
       const binding = shortcuts.find(
         (shortcut) => shortcut.scriptId === selectedScript.id,
       );
@@ -503,6 +509,7 @@ function App() {
       const updated = await operatorApi.updateScript(selectedScript.id, {
         name: detailName,
         description: detailDescription,
+        events: detailEvents,
       });
       setSelectedScript(updated);
       await refresh();
@@ -538,6 +545,21 @@ function App() {
       setView("detail");
       await refresh();
       setNotice({ tone: "success", message: t("notice.sampleCreated") });
+    });
+  };
+
+  const createCustomScript = async () => {
+    await runAction("custom-script", async () => {
+      const script = await operatorApi.createScript({
+        name: t("script.customName"),
+        description: t("script.customDescription"),
+        events: [],
+      });
+      setSelectedScript(script);
+      setDetailEvents(script.events);
+      setView("detail");
+      await refresh();
+      setNotice({ tone: "success", message: t("notice.customScriptCreated") });
     });
   };
 
@@ -718,8 +740,16 @@ function App() {
                 {t("topbar.stopReplay")}
               </Button>
             ) : null}
+            <Button
+              variant="outline"
+              onClick={() => void createCustomScript()}
+              disabled={busyAction === "custom-script"}
+            >
+              <ListPlus aria-hidden="true" className="size-4" />
+              {t("topbar.createScript")}
+            </Button>
             <Button variant="default" onClick={() => void startRecording()}>
-              <Plus aria-hidden="true" className="size-4" />
+              <Radio aria-hidden="true" className="size-4" />
               {t("topbar.recordNewScript")}
             </Button>
           </div>
@@ -747,6 +777,7 @@ function App() {
             onOpen={openScript}
             onReplay={replayScript}
             onDelete={deleteScript}
+            onCreateCustom={createCustomScript}
             onCreateDemo={createDemoScript}
           />
         ) : null}
@@ -776,16 +807,17 @@ function App() {
 
         {view === "detail" && selectedScript ? (
           <ScriptDetail
-            script={selectedScript}
             shortcut={selectedShortcut}
             replayOptions={replayOptions}
             detailName={detailName}
             detailDescription={detailDescription}
+            events={detailEvents}
             shortcutDraft={shortcutDraft}
             busyAction={busyAction}
             i18n={i18n}
             onNameChange={setDetailName}
             onDescriptionChange={setDetailDescription}
+            onEventsChange={setDetailEvents}
             onReplayOptionsChange={setReplayOptions}
             onShortcutDraftChange={setShortcutDraft}
             onSave={saveDetail}
@@ -799,7 +831,6 @@ function App() {
         {view === "settings" ? (
           <Settings
             settings={settings}
-            status={status}
             exportPayload={exportPayload}
             importPayload={importPayload}
             busyAction={busyAction}
@@ -834,6 +865,7 @@ type DashboardProps = {
   onOpen: (id: string) => Promise<void>;
   onReplay: (id: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onCreateCustom: () => Promise<void>;
   onCreateDemo: () => Promise<void>;
 };
 
@@ -850,6 +882,7 @@ function Dashboard({
   onOpen,
   onReplay,
   onDelete,
+  onCreateCustom,
   onCreateDemo,
 }: DashboardProps) {
   const { t } = i18n;
@@ -886,6 +919,15 @@ function Dashboard({
           <option value="name">{t("dashboard.name")}</option>
           <option value="duration">{t("dashboard.duration")}</option>
         </select>
+        <Button
+          variant="outline"
+          onClick={() => void onCreateCustom()}
+          disabled={busyAction === "custom-script"}
+          className="toolbar-btn"
+        >
+          <ListPlus aria-hidden="true" className="size-4" />
+          {t("dashboard.createScript")}
+        </Button>
         <Button
           variant="outline"
           onClick={() => void onCreateDemo()}
@@ -1082,16 +1124,17 @@ function RecorderPanel({
 }
 
 type ScriptDetailProps = {
-  script: Script;
   shortcut?: ShortcutBinding;
   replayOptions: ReplayOptions;
   detailName: string;
   detailDescription: string;
+  events: ScriptEvent[];
   shortcutDraft: string;
   busyAction: string | null;
   i18n: I18n;
   onNameChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
+  onEventsChange: (events: ScriptEvent[]) => void;
   onReplayOptionsChange: (value: ReplayOptions) => void;
   onShortcutDraftChange: (value: string) => void;
   onSave: () => Promise<void>;
@@ -1102,16 +1145,17 @@ type ScriptDetailProps = {
 };
 
 function ScriptDetail({
-  script,
   shortcut,
   replayOptions,
   detailName,
   detailDescription,
+  events,
   shortcutDraft,
   busyAction,
   i18n,
   onNameChange,
   onDescriptionChange,
+  onEventsChange,
   onReplayOptionsChange,
   onShortcutDraftChange,
   onSave,
@@ -1295,20 +1339,80 @@ function ScriptDetail({
             {t("detail.eventTimeline")}
           </h3>
           <span className="badge">
-            {t("detail.eventCount", { count: script.eventCount })}
+            {t("detail.eventCount", { count: events.length })}
           </span>
         </div>
-        <EventTimeline events={script.events} i18n={i18n} />
+        <EventTimeline
+          events={events}
+          i18n={i18n}
+          onEventsChange={onEventsChange}
+        />
       </div>
     </section>
   );
 }
 
-function EventTimeline({ events, i18n }: { events: ScriptEvent[]; i18n: I18n }) {
+function EventTimeline({
+  events,
+  i18n,
+  onEventsChange,
+}: {
+  events: ScriptEvent[];
+  i18n: I18n;
+  onEventsChange?: (events: ScriptEvent[]) => void;
+}) {
   const { t } = i18n;
+  const [stepTemplate, setStepTemplate] = useState<StepTemplate>("click");
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const editable = Boolean(onEventsChange);
+
+  const updateEvent = (index: number, nextEvent: ScriptEvent) => {
+    onEventsChange?.(events.map((event, eventIndex) =>
+      eventIndex === index ? nextEvent : event,
+    ));
+  };
+
+  const removeEvent = (index: number) => {
+    onEventsChange?.(events.filter((_, eventIndex) => eventIndex !== index));
+  };
+
+  const moveEvent = (fromIndex: number, toIndex: number) => {
+    onEventsChange?.(moveTimelineEvent(events, fromIndex, toIndex));
+  };
+
+  const addStep = () => {
+    const lastEvent = events[events.length - 1];
+    const startTimestamp = (lastEvent?.timestampMs ?? 0) + 250;
+    onEventsChange?.([
+      ...events,
+      ...createEventsFromTemplate(stepTemplate, startTimestamp),
+    ]);
+  };
+
+  const dropEvent = (toIndex: number) => {
+    if (dragIndex === null || dragIndex === toIndex) {
+      setDragIndex(null);
+      return;
+    }
+
+    moveEvent(dragIndex, toIndex);
+    setDragIndex(null);
+  };
 
   if (events.length === 0) {
-    return <p className="muted-text text-center py-6">{t("timeline.empty")}</p>;
+    return (
+      <div className="timeline-empty-block">
+        {editable ? (
+          <StepToolbar
+            i18n={i18n}
+            stepTemplate={stepTemplate}
+            onStepTemplateChange={setStepTemplate}
+            onAddStep={addStep}
+          />
+        ) : null}
+        <p className="muted-text text-center py-6">{t("timeline.empty")}</p>
+      </div>
+    );
   }
 
   const getEventIcon = (kind: string) => {
@@ -1331,23 +1435,146 @@ function EventTimeline({ events, i18n }: { events: ScriptEvent[]; i18n: I18n }) 
   };
 
   return (
-    <div className="timeline-table">
+    <div className={editable ? "timeline-table editable" : "timeline-table"}>
+      {editable ? (
+        <StepToolbar
+          i18n={i18n}
+          stepTemplate={stepTemplate}
+          onStepTemplateChange={setStepTemplate}
+          onAddStep={addStep}
+        />
+      ) : null}
       <div className="timeline-header">
+        {editable ? <span aria-hidden="true" /> : null}
         <span>{t("timeline.time")}</span>
         <span>{t("timeline.type")}</span>
         <span>{t("timeline.input")}</span>
         <span>{t("timeline.position")}</span>
+        {editable ? <span>{t("timeline.actions")}</span> : null}
       </div>
       <div className="timeline-body">
-        {events.slice(0, 500).map((event) => (
-          <div className="timeline-row" key={event.id}>
-            <span className="timer-font">{formatDuration(event.timestampMs)}</span>
-            <span className="event-type-cell">
+        {events.slice(0, 500).map((event, index) => (
+          <div
+            className={editable && dragIndex === index ? "timeline-row dragging" : "timeline-row"}
+            key={event.id}
+            onDragOver={(dragEvent) => {
+              if (editable) {
+                dragEvent.preventDefault();
+              }
+            }}
+            onDrop={() => dropEvent(index)}
+          >
+            {editable ? (
+              <div className="timeline-cell drag-cell">
+                <button
+                  type="button"
+                  className="icon-button drag-handle"
+                  draggable
+                  aria-label={t("timeline.dragStep")}
+                  onDragStart={() => setDragIndex(index)}
+                  onDragEnd={() => setDragIndex(null)}
+                >
+                  <GripVertical aria-hidden="true" className="size-4" />
+                </button>
+              </div>
+            ) : null}
+            <div className="timeline-cell">
+              {editable ? (
+                <Input
+                  aria-label={t("timeline.time")}
+                  className="timeline-field mono-field"
+                  type="number"
+                  min="0"
+                  step="50"
+                  value={event.timestampMs}
+                  onChange={(changeEvent) =>
+                    updateEvent(index, {
+                      ...event,
+                      timestampMs: Number(changeEvent.currentTarget.value),
+                    })
+                  }
+                />
+              ) : (
+                <span className="timer-font">{formatDuration(event.timestampMs)}</span>
+              )}
+            </div>
+            <div className="timeline-cell event-type-cell">
               {getEventIcon(event.kind)}
-              <span className="capitalize">{eventKindLabel(event.kind, i18n)}</span>
-            </span>
-            <span className="font-mono text-xs">{eventInput(event)}</span>
-            <span className="font-mono text-xs text-muted-foreground">{eventPosition(event)}</span>
+              {editable ? (
+                <select
+                  aria-label={t("timeline.type")}
+                  value={event.kind}
+                  onChange={(changeEvent) =>
+                    updateEvent(
+                      index,
+                      convertEventKind(event, changeEvent.currentTarget.value as EventKind),
+                    )
+                  }
+                >
+                  {eventKinds.map((kind) => (
+                    <option key={kind} value={kind}>
+                      {eventKindLabel(kind, i18n)}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="capitalize">{eventKindLabel(event.kind, i18n)}</span>
+              )}
+            </div>
+            <div className="timeline-cell">
+              {editable ? (
+                <EventInputEditor
+                  event={event}
+                  i18n={i18n}
+                  onChange={(nextEvent) => updateEvent(index, nextEvent)}
+                />
+              ) : (
+                <span className="font-mono text-xs">{eventInput(event)}</span>
+              )}
+            </div>
+            <div className="timeline-cell">
+              {editable ? (
+                <EventPositionEditor
+                  event={event}
+                  i18n={i18n}
+                  onChange={(nextEvent) => updateEvent(index, nextEvent)}
+                />
+              ) : (
+                <span className="font-mono text-xs text-muted-foreground">
+                  {eventPosition(event)}
+                </span>
+              )}
+            </div>
+            {editable ? (
+              <div className="timeline-cell timeline-actions">
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={t("timeline.moveUp")}
+                  disabled={index === 0}
+                  onClick={() => moveEvent(index, index - 1)}
+                >
+                  <ArrowUp aria-hidden="true" className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={t("timeline.moveDown")}
+                  disabled={index === events.length - 1}
+                  onClick={() => moveEvent(index, index + 1)}
+                >
+                  <ArrowDown aria-hidden="true" className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button danger"
+                  aria-label={t("timeline.removeStep")}
+                  onClick={() => removeEvent(index)}
+                >
+                  <Trash2 aria-hidden="true" className="size-4" />
+                </button>
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
@@ -1355,9 +1582,175 @@ function EventTimeline({ events, i18n }: { events: ScriptEvent[]; i18n: I18n }) 
   );
 }
 
+function StepToolbar({
+  i18n,
+  stepTemplate,
+  onStepTemplateChange,
+  onAddStep,
+}: {
+  i18n: I18n;
+  stepTemplate: StepTemplate;
+  onStepTemplateChange: (value: StepTemplate) => void;
+  onAddStep: () => void;
+}) {
+  const { t } = i18n;
+
+  return (
+    <div className="step-toolbar">
+      <select
+        aria-label={t("timeline.addStepType")}
+        value={stepTemplate}
+        onChange={(event) => onStepTemplateChange(event.currentTarget.value as StepTemplate)}
+      >
+        {stepTemplates.map((template) => (
+          <option key={template} value={template}>
+            {stepTemplateLabel(template, i18n)}
+          </option>
+        ))}
+      </select>
+      <Button variant="outline" size="sm" onClick={onAddStep}>
+        <Plus aria-hidden="true" className="size-4" />
+        {t("timeline.addStep")}
+      </Button>
+    </div>
+  );
+}
+
+function EventInputEditor({
+  event,
+  i18n,
+  onChange,
+}: {
+  event: ScriptEvent;
+  i18n: I18n;
+  onChange: (event: ScriptEvent) => void;
+}) {
+  const { t } = i18n;
+
+  if (event.kind === "mouse_down" || event.kind === "mouse_up") {
+    return (
+      <select
+        aria-label={t("timeline.input")}
+        value={event.button ?? "left"}
+        onChange={(changeEvent) =>
+          onChange({
+            ...event,
+            button: changeEvent.currentTarget.value as ScriptEvent["button"],
+          })
+        }
+      >
+        {mouseButtons.map((button) => (
+          <option key={button} value={button}>
+            {button}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  if (event.kind === "key_down" || event.kind === "key_up") {
+    return (
+      <Input
+        aria-label={t("timeline.input")}
+        className="timeline-field mono-field"
+        value={event.key ?? ""}
+        placeholder="Return"
+        onChange={(changeEvent) =>
+          onChange({ ...event, key: changeEvent.currentTarget.value })
+        }
+      />
+    );
+  }
+
+  if (event.kind === "text") {
+    return (
+      <Input
+        aria-label={t("timeline.input")}
+        className="timeline-field"
+        value={event.text ?? ""}
+        placeholder="Text"
+        onChange={(changeEvent) =>
+          onChange({ ...event, text: changeEvent.currentTarget.value })
+        }
+      />
+    );
+  }
+
+  return <span className="muted-text">{eventInput(event)}</span>;
+}
+
+function EventPositionEditor({
+  event,
+  i18n,
+  onChange,
+}: {
+  event: ScriptEvent;
+  i18n: I18n;
+  onChange: (event: ScriptEvent) => void;
+}) {
+  const { t } = i18n;
+
+  if (event.kind === "mouse_move" || event.kind === "mouse_down" || event.kind === "mouse_up") {
+    return (
+      <div className="position-editor">
+        <Input
+          aria-label={t("timeline.x")}
+          className="timeline-field mono-field"
+          type="number"
+          value={event.x ?? 0}
+          onChange={(changeEvent) =>
+            onChange({ ...event, x: Number(changeEvent.currentTarget.value) })
+          }
+        />
+        <Input
+          aria-label={t("timeline.y")}
+          className="timeline-field mono-field"
+          type="number"
+          value={event.y ?? 0}
+          onChange={(changeEvent) =>
+            onChange({ ...event, y: Number(changeEvent.currentTarget.value) })
+          }
+        />
+      </div>
+    );
+  }
+
+  if (event.kind === "mouse_scroll") {
+    return (
+      <div className="position-editor">
+        <Input
+          aria-label={t("timeline.deltaX")}
+          className="timeline-field mono-field"
+          type="number"
+          value={event.scrollDeltaX ?? 0}
+          onChange={(changeEvent) =>
+            onChange({
+              ...event,
+              scrollDeltaX: Number(changeEvent.currentTarget.value),
+            })
+          }
+        />
+        <Input
+          aria-label={t("timeline.deltaY")}
+          className="timeline-field mono-field"
+          type="number"
+          value={event.scrollDeltaY ?? 0}
+          onChange={(changeEvent) =>
+            onChange({
+              ...event,
+              scrollDeltaY: Number(changeEvent.currentTarget.value),
+            })
+          }
+        />
+      </div>
+    );
+  }
+
+  return <span className="muted-text">-</span>;
+}
+
 type SettingsProps = {
   settings: AppSettings;
-  status: AppStatus;
   exportPayload: string;
   importPayload: string;
   busyAction: string | null;
@@ -1375,7 +1768,6 @@ type SettingsProps = {
 
 function Settings({
   settings,
-  status,
   exportPayload,
   importPayload,
   busyAction,
@@ -1484,6 +1876,22 @@ function Settings({
           />
           <span>{t("settings.skipMouseMovesDefault")}</span>
         </label>
+        <Button
+          variant="default"
+          onClick={() => void onSaveSettings()}
+          disabled={busyAction === "save-settings"}
+          className="w-full sm:w-auto"
+        >
+          <Save aria-hidden="true" className="size-4" />
+          {t("settings.save")}
+        </Button>
+      </div>
+
+      <div className="panel settings-panel">
+        <h3>
+          <Languages aria-hidden="true" className="section-icon" />
+          {t("settings.language")}
+        </h3>
         <label className="form-label">
           {t("settings.language")}
           <select
@@ -1535,53 +1943,6 @@ function Settings({
           </label>
           <p className="muted-text">{t("settings.recordMouseMovesHelp")}</p>
         </div>
-      </div>
-
-      <div className="panel settings-panel">
-        <h3>
-          <MonitorCog aria-hidden="true" className="section-icon" />
-          {t("settings.platform")}
-        </h3>
-        <dl className="settings-list">
-          <div>
-            <dt>{t("settings.os")}</dt>
-            <dd>{status.platform.os}</dd>
-          </div>
-          <div>
-            <dt>{t("settings.linuxSession")}</dt>
-            <dd>{status.platform.linuxSession ?? t("settings.na")}</dd>
-          </div>
-          <div>
-            <dt>{t("action.replay")}</dt>
-            <dd className="capitalize">
-              {status.platform.replaySupported
-                ? t("settings.supported")
-                : t("settings.limited")}
-            </dd>
-          </div>
-          <div>
-            <dt>{t("settings.recording")}</dt>
-            <dd className="capitalize">
-              {status.platform.recordingSupported
-                ? t("settings.supported")
-                : t("settings.limited")}
-            </dd>
-          </div>
-          <div>
-            <dt>{t("settings.macosAccessibility")}</dt>
-            <dd className="capitalize">{status.permissions.macosAccessibility}</dd>
-          </div>
-          <div>
-            <dt>{t("settings.macosInputMonitoring")}</dt>
-            <dd className="capitalize">{status.permissions.macosInputMonitoring}</dd>
-          </div>
-          <div>
-            <dt>{t("settings.dataDirectory")}</dt>
-            <dd className="text-xs break-all font-mono opacity-80">
-              {status.dataDir || t("settings.pending")}
-            </dd>
-          </div>
-        </dl>
       </div>
 
       <div className="panel settings-panel">
@@ -1829,6 +2190,31 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+type StepTemplate = "click" | EventKind;
+
+const eventKinds: EventKind[] = [
+  "mouse_down",
+  "mouse_up",
+  "mouse_move",
+  "mouse_scroll",
+  "key_down",
+  "key_up",
+  "text",
+];
+
+const stepTemplates: StepTemplate[] = [
+  "click",
+  "mouse_down",
+  "mouse_up",
+  "mouse_move",
+  "mouse_scroll",
+  "key_down",
+  "key_up",
+  "text",
+];
+
+const mouseButtons = ["left", "right", "middle", "back", "forward", "unknown"] as const;
+
 function createDemoEvents(): ScriptEvent[] {
   return [
     {
@@ -1850,6 +2236,124 @@ function createDemoEvents(): ScriptEvent[] {
       key: "Return",
     },
   ];
+}
+
+function createEventsFromTemplate(template: StepTemplate, timestampMs: number): ScriptEvent[] {
+  if (template === "click") {
+    return [
+      createDefaultEvent("mouse_down", timestampMs, {
+        button: "left",
+        x: 0,
+        y: 0,
+      }),
+      createDefaultEvent("mouse_up", timestampMs + 80, {
+        button: "left",
+        x: 0,
+        y: 0,
+      }),
+    ];
+  }
+
+  return [createDefaultEvent(template, timestampMs)];
+}
+
+function createDefaultEvent(
+  kind: EventKind,
+  timestampMs: number,
+  overrides: Partial<ScriptEvent> = {},
+): ScriptEvent {
+  const base: ScriptEvent = {
+    id: crypto.randomUUID(),
+    timestampMs,
+    kind,
+  };
+
+  return { ...convertEventKind(base, kind), ...overrides };
+}
+
+function convertEventKind(event: ScriptEvent, kind: EventKind): ScriptEvent {
+  const base = {
+    id: event.id,
+    timestampMs: event.timestampMs,
+    kind,
+    metadata: event.metadata,
+  } satisfies Pick<ScriptEvent, "id" | "timestampMs" | "kind" | "metadata">;
+
+  if (kind === "mouse_down" || kind === "mouse_up") {
+    return {
+      ...base,
+      x: event.x ?? 0,
+      y: event.y ?? 0,
+      button: event.button ?? "left",
+    };
+  }
+
+  if (kind === "mouse_move") {
+    return {
+      ...base,
+      x: event.x ?? 0,
+      y: event.y ?? 0,
+    };
+  }
+
+  if (kind === "mouse_scroll") {
+    return {
+      ...base,
+      scrollDeltaX: event.scrollDeltaX ?? 0,
+      scrollDeltaY: event.scrollDeltaY ?? -600,
+    };
+  }
+
+  if (kind === "key_down" || kind === "key_up") {
+    return {
+      ...base,
+      key: event.key ?? event.text ?? "Return",
+    };
+  }
+
+  return {
+    ...base,
+    text: event.text ?? event.key ?? "Text",
+  };
+}
+
+function moveTimelineEvent(events: ScriptEvent[], fromIndex: number, toIndex: number) {
+  if (
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= events.length ||
+    toIndex >= events.length ||
+    fromIndex === toIndex
+  ) {
+    return events;
+  }
+
+  const eventsWithDelay = events.map((event, index) => ({
+    event,
+    delayMs:
+      index === 0
+        ? Math.max(0, event.timestampMs)
+        : Math.max(0, event.timestampMs - events[index - 1].timestampMs),
+  }));
+  const [moving] = eventsWithDelay.splice(fromIndex, 1);
+  eventsWithDelay.splice(toIndex, 0, moving);
+
+  let timestampMs = 0;
+  return eventsWithDelay.map(({ event, delayMs }) => {
+    timestampMs += delayMs;
+    return {
+      ...event,
+      timestampMs,
+    };
+  });
+}
+
+function stepTemplateLabel(template: StepTemplate, i18n: I18n) {
+  if (template === "click") {
+    return i18n.t("event.click");
+  }
+
+  return eventKindLabel(template, i18n);
 }
 
 function stateLabel(state: AppStatus["state"], i18n: I18n) {

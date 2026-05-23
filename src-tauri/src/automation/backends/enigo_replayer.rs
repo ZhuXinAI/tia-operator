@@ -117,6 +117,10 @@ fn map_key(key: &str) -> Option<Key> {
         return normalized.chars().next().map(Key::Unicode);
     }
 
+    if let Some(character) = map_printable_key_code(normalized) {
+        return Some(Key::Unicode(character));
+    }
+
     match normalized {
         "Alt" | "AltLeft" | "AltRight" | "Option" => Some(Key::Alt),
         "Backspace" => Some(Key::Backspace),
@@ -149,6 +153,38 @@ fn map_key(key: &str) -> Option<Key> {
         "Space" => Some(Key::Space),
         "Tab" => Some(Key::Tab),
         "UpArrow" | "ArrowUp" | "Up" => Some(Key::UpArrow),
+        _ => None,
+    }
+}
+
+fn map_printable_key_code(key: &str) -> Option<char> {
+    if let Some(letter) = key.strip_prefix("Key") {
+        if letter.len() == 1 {
+            return letter
+                .chars()
+                .next()
+                .map(|character| character.to_ascii_lowercase());
+        }
+    }
+
+    if let Some(number) = key.strip_prefix("Num") {
+        if number.len() == 1 {
+            return number.chars().next();
+        }
+    }
+
+    match key {
+        "BackQuote" | "Grave" => Some('`'),
+        "Minus" => Some('-'),
+        "Equal" => Some('='),
+        "LeftBracket" => Some('['),
+        "RightBracket" => Some(']'),
+        "BackSlash" | "Backslash" => Some('\\'),
+        "Semicolon" => Some(';'),
+        "Quote" => Some('\''),
+        "Comma" => Some(','),
+        "Dot" | "Period" => Some('.'),
+        "Slash" => Some('/'),
         _ => None,
     }
 }
