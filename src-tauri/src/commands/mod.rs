@@ -171,3 +171,9 @@ pub async fn import_scripts(payload: String, state: State<'_, AppState>) -> AppR
 pub async fn delete_all_scripts(state: State<'_, AppState>) -> AppResult<()> {
     state.db.delete_all_scripts()
 }
+
+#[tauri::command]
+pub async fn restart_app(app: AppHandle) -> AppResult<()> {
+    app.request_restart();
+    Ok(())
+}

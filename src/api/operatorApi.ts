@@ -45,4 +45,5 @@ export const operatorApi = {
   exportAllScripts: () => call<string>("export_all_scripts"),
   importScripts: (payload: string) => call<Script[]>("import_scripts", { payload }),
   deleteAllScripts: () => call<void>("delete_all_scripts"),
+  restartApp: () => call<void>("restart_app"),
 };

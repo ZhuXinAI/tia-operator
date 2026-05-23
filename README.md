@@ -82,7 +82,7 @@ Scripts can be exported and imported as JSON from Settings.
 
 ## Release Downloads
 
-This repo includes `.github/workflows/release.yml`. Pushing a tag like `v0.1.1` builds release artifacts for Windows and macOS Apple Silicon and uploads them to a GitHub Release through `tauri-apps/tauri-action`.
+This repo includes `.github/workflows/release.yml`. Pushing a tag like `v0.1.2` builds release artifacts for Windows and macOS Apple Silicon and uploads them to a GitHub Release through `tauri-apps/tauri-action`.
 
 Before publishing:
 
@@ -92,8 +92,8 @@ Before publishing:
    - `TAURI_SIGNING_PRIVATE_KEY`
    - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
 The release workflow runs `scripts/prepare-release-config.mjs`, which sets the updater endpoint to the current GitHub repository and requires updater signing secrets before publishing.
@@ -109,7 +109,7 @@ macOS GitHub releases can be built without Apple signing, but public downloads s
 
 ## Auto Update Readiness
 
-The Tauri updater plugin is registered in Rust and permitted in `src-tauri/capabilities/default.json`.
+The Tauri updater plugin is registered in Rust and permitted in `src-tauri/capabilities/default.json`. The app checks GitHub Releases on startup, shows an update banner when a signed update is available, and also exposes a manual check from Settings. Installing an update downloads the signed updater artifact, installs it through Tauri, and restarts the app.
 
 The app is configured to check this updater endpoint:
 

@@ -53,6 +53,7 @@ pub fn run() {
             commands::export_all_scripts,
             commands::import_scripts,
             commands::delete_all_scripts,
+            commands::restart_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { check, type DownloadEvent } from "@tauri-apps/plugin-updater";
 import {
   Database,
   Download,
@@ -18,9 +19,17 @@ import {
   Square,
   Trash2,
   Upload,
+  Sun,
+  Moon,
+  Scroll,
+  Info,
+  AlertTriangle,
+  CheckCircle,
 } from "lucide-react";
 import "./App.css";
 import { operatorApi } from "./api/operatorApi";
+import { Button } from "./components/ui/button";
+import { Input } from "./components/ui/input";
 import {
   Sidebar,
   SidebarContent,
@@ -53,6 +62,21 @@ type SortMode = "updated" | "name" | "duration";
 type Notice = {
   tone: "info" | "success" | "warning" | "danger";
   message: string;
+};
+type UpdaterStatus = {
+  state:
+    | "idle"
+    | "checking"
+    | "available"
+    | "downloading"
+    | "installing"
+    | "upToDate"
+    | "error";
+  version?: string;
+  currentVersion?: string;
+  message?: string;
+  downloadedBytes?: number;
+  totalBytes?: number;
 };
 
 const defaultStatus: AppStatus = {
@@ -95,6 +119,23 @@ const defaultReplayOptions: ReplayOptions = {
 };
 
 function App() {
+  const [theme, setTheme] = useState<"light" | "dark">(
+    () => {
+      const saved = localStorage.getItem("tia-theme");
+      if (saved === "light" || saved === "dark") return saved;
+      return "dark"; // Default to dark mode for premium look
+    }
+  );
+
+  useEffect(() => {
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+    localStorage.setItem("tia-theme", theme);
+  }, [theme]);
+
   const [view, setView] = useState<View>("dashboard");
   const [scripts, setScripts] = useState<ScriptSummary[]>([]);
   const [shortcuts, setShortcuts] = useState<ShortcutBinding[]>([]);
@@ -102,6 +143,9 @@ function App() {
   const [status, setStatus] = useState<AppStatus>(defaultStatus);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [updaterStatus, setUpdaterStatus] = useState<UpdaterStatus>({
+    state: "idle",
+  });
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("updated");
@@ -136,11 +180,111 @@ function App() {
     }));
   }, []);
 
+  const checkForUpdates = useCallback(async (manual = true) => {
+    if (manual) {
+      setUpdaterStatus({ state: "checking" });
+    }
+
+    try {
+      const update = await check({ timeout: 10_000 });
+      if (!update) {
+        setUpdaterStatus(
+          manual
+            ? { state: "upToDate", message: "TIA Operator is up to date." }
+            : { state: "idle" },
+        );
+        return;
+      }
+
+      const nextStatus: UpdaterStatus = {
+        state: "available",
+        version: update.version,
+        currentVersion: update.currentVersion,
+        message: update.body,
+      };
+      await update.close();
+      setUpdaterStatus(nextStatus);
+    } catch (error) {
+      setUpdaterStatus(
+        manual
+          ? {
+              state: "error",
+              message: `Update check failed: ${getErrorMessage(error)}`,
+            }
+          : { state: "idle" },
+      );
+    }
+  }, []);
+
+  const installUpdate = useCallback(async () => {
+    setUpdaterStatus((current) => ({
+      ...current,
+      state: "downloading",
+      downloadedBytes: 0,
+      totalBytes: undefined,
+    }));
+
+    try {
+      const update = await check({ timeout: 10_000 });
+      if (!update) {
+        setUpdaterStatus({
+          state: "upToDate",
+          message: "The release feed no longer has a newer version.",
+        });
+        return;
+      }
+
+      const version = update.version;
+      let downloadedBytes = 0;
+      let totalBytes: number | undefined;
+
+      await update.downloadAndInstall((event: DownloadEvent) => {
+        if (event.event === "Started") {
+          downloadedBytes = 0;
+          totalBytes = event.data.contentLength;
+        }
+
+        if (event.event === "Progress") {
+          downloadedBytes += event.data.chunkLength;
+        }
+
+        if (event.event === "Finished") {
+          downloadedBytes = totalBytes ?? downloadedBytes;
+        }
+
+        setUpdaterStatus({
+          state: event.event === "Finished" ? "installing" : "downloading",
+          version,
+          currentVersion: update.currentVersion,
+          downloadedBytes,
+          totalBytes,
+        });
+      });
+
+      setUpdaterStatus({
+        state: "installing",
+        version,
+        currentVersion: update.currentVersion,
+        message: "Update installed. Restarting TIA Operator.",
+      });
+      await operatorApi.restartApp();
+    } catch (error) {
+      setUpdaterStatus({
+        state: "error",
+        message: `Update install failed: ${getErrorMessage(error)}`,
+      });
+    }
+  }, []);
+
   useEffect(() => {
     refresh().catch((error: Error) =>
       setNotice({ tone: "danger", message: error.message }),
     );
   }, [refresh]);
+
+  useEffect(() => {
+    void checkForUpdates(false);
+  }, [checkForUpdates]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -485,11 +629,36 @@ function App() {
         </SidebarContent>
 
         <SidebarFooter>
-          <div className={`mode-pill ${status.state}`}>
-            <span aria-hidden="true" />
-            <strong>{stateLabel(status.state)}</strong>
+          <div className="sidebar-footer-container">
+            <div className={`mode-pill ${status.state}`}>
+              <span aria-hidden="true" />
+              <strong>{stateLabel(status.state)}</strong>
+            </div>
+            <p className="shortcut-note">Stop: {status.emergencyStopShortcut}</p>
+
+            <div className="theme-toggle-container">
+              <div className="theme-toggle-buttons">
+                <button
+                  type="button"
+                  className={`theme-btn ${theme === "light" ? "active" : ""}`}
+                  onClick={() => setTheme("light")}
+                  title="Light Mode"
+                >
+                  <Sun size={14} />
+                  <span>Light</span>
+                </button>
+                <button
+                  type="button"
+                  className={`theme-btn ${theme === "dark" ? "active" : ""}`}
+                  onClick={() => setTheme("dark")}
+                  title="Dark Mode"
+                >
+                  <Moon size={14} />
+                  <span>Dark</span>
+                </button>
+              </div>
+            </div>
           </div>
-          <p className="shortcut-note">Stop: {status.emergencyStopShortcut}</p>
         </SidebarFooter>
       </Sidebar>
 
@@ -505,19 +674,24 @@ function App() {
           </div>
           <div className="topbar-actions">
             {status.state === "replaying" ? (
-              <button className="danger-button" type="button" onClick={() => void operatorApi.stopReplay()}>
-                <Square aria-hidden="true" className="button-icon" />
+              <Button variant="destructive" onClick={() => void operatorApi.stopReplay()}>
+                <Square aria-hidden="true" className="size-4" />
                 Stop Replay
-              </button>
+              </Button>
             ) : null}
-            <button className="primary-button" type="button" onClick={() => void startRecording()}>
-              <Plus aria-hidden="true" className="button-icon" />
+            <Button variant="default" onClick={() => void startRecording()}>
+              <Plus aria-hidden="true" className="size-4" />
               Record New Script
-            </button>
+            </Button>
           </div>
         </header>
 
-        <StatusBanners status={status} notice={notice} />
+        <StatusBanners
+          status={status}
+          notice={notice}
+          updaterStatus={updaterStatus}
+          onInstallUpdate={installUpdate}
+        />
 
         {view === "dashboard" ? (
           <Dashboard
@@ -586,12 +760,15 @@ function App() {
             exportPayload={exportPayload}
             importPayload={importPayload}
             busyAction={busyAction}
+            updaterStatus={updaterStatus}
             onSettingsChange={setSettings}
             onSaveSettings={saveSettings}
             onExportScripts={exportScripts}
             onImportPayloadChange={setImportPayload}
             onImportScripts={importScripts}
             onDeleteAllScripts={deleteAllScripts}
+            onCheckForUpdates={() => checkForUpdates(true)}
+            onInstallUpdate={installUpdate}
           />
         ) : null}
         </section>
@@ -632,19 +809,22 @@ function Dashboard({
   return (
     <section className="panel">
       <div className="toolbar-row">
-        <input
-          aria-label="Search scripts"
-          className="search-input"
-          value={search}
-          onChange={(event) => onSearch(event.currentTarget.value)}
-          placeholder="Search scripts"
-        />
+        <div className="search-input-wrapper">
+          <Input
+            aria-label="Search scripts"
+            className="search-input"
+            value={search}
+            onChange={(event) => onSearch(event.currentTarget.value)}
+            placeholder="Search scripts..."
+          />
+        </div>
         <select
           value={filter}
           onChange={(event) => onFilter(event.currentTarget.value as Filter)}
           aria-label="Filter scripts"
+          className="toolbar-select"
         >
-          <option value="all">All</option>
+          <option value="all">All Shortcuts</option>
           <option value="withShortcut">With shortcut</option>
           <option value="withoutShortcut">No shortcut</option>
         </select>
@@ -652,20 +832,21 @@ function Dashboard({
           value={sortMode}
           onChange={(event) => onSort(event.currentTarget.value as SortMode)}
           aria-label="Sort scripts"
+          className="toolbar-select"
         >
           <option value="updated">Recently updated</option>
           <option value="name">Name</option>
           <option value="duration">Duration</option>
         </select>
-        <button
-          className="secondary-button"
-          type="button"
+        <Button
+          variant="outline"
           onClick={() => void onCreateDemo()}
           disabled={busyAction === "demo-script"}
+          className="toolbar-btn"
         >
-          <Plus aria-hidden="true" className="button-icon" />
+          <Plus aria-hidden="true" className="size-4" />
           Add Sample
-        </button>
+        </Button>
       </div>
 
       {scripts.length === 0 ? (
@@ -701,22 +882,23 @@ function Dashboard({
                 </div>
               </dl>
               <div className="card-actions">
-                <button type="button" onClick={() => void onReplay(script.id)}>
-                  <Play aria-hidden="true" className="button-icon" />
+                <Button size="sm" onClick={() => void onReplay(script.id)} className="flex-1">
+                  <Play aria-hidden="true" className="size-3.5" />
                   Replay
-                </button>
-                <button type="button" onClick={() => void onOpen(script.id)}>
-                  <Pencil aria-hidden="true" className="button-icon" />
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => void onOpen(script.id)} className="flex-1">
+                  <Pencil aria-hidden="true" className="size-3.5" />
                   Edit
-                </button>
-                <button
-                  className="ghost-danger"
-                  type="button"
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
                   onClick={() => void onDelete(script.id)}
+                  className="flex-1"
                 >
-                  <Trash2 aria-hidden="true" className="button-icon" />
+                  <Trash2 aria-hidden="true" className="size-3.5" />
                   Delete
-                </button>
+                </Button>
               </div>
             </article>
           ))}
@@ -761,73 +943,81 @@ function RecorderPanel({
     <section className="panel recorder-layout">
       <div className="recorder-main">
         <div className={isRecording ? "recording-light active" : "recording-light"}>
-          <span aria-hidden="true" />
+          <span aria-hidden="true" className={isRecording ? "animate-pulse" : ""} />
           {isRecording ? "Recording" : isPaused ? "Paused" : "Ready"}
         </div>
-        <label>
+        <label className="form-label">
           Script name
-          <input
+          <Input
             value={recordingName}
             onChange={(event) => onNameChange(event.currentTarget.value)}
+            disabled={!canStart}
           />
         </label>
-        <label>
+        <label className="form-label">
           Description
           <textarea
             value={recordingDescription}
             onChange={(event) => onDescriptionChange(event.currentTarget.value)}
             rows={4}
+            disabled={!canStart}
+            className="workspace-textarea"
           />
         </label>
         <div className="button-row">
-          <button
-            className="primary-button"
-            type="button"
-            onClick={() => void onStart()}
-            disabled={!canStart || busyAction === "start-recording"}
-          >
-            <Radio aria-hidden="true" className="button-icon" />
-            Start
-          </button>
-          <button type="button" onClick={onPause} disabled={!isRecording}>
-            <Pause aria-hidden="true" className="button-icon" />
-            Pause
-          </button>
-          <button type="button" onClick={onResume} disabled={!isPaused}>
-            <Play aria-hidden="true" className="button-icon" />
-            Resume
-          </button>
-          <button
-            className="success-button"
-            type="button"
-            onClick={() => void onStop()}
-            disabled={!isRecording && !isPaused}
-          >
-            <Save aria-hidden="true" className="button-icon" />
-            Stop and Save
-          </button>
-          <button
-            className="ghost-danger"
-            type="button"
-            onClick={onDiscard}
-            disabled={!isRecording && !isPaused}
-          >
-            <Trash2 aria-hidden="true" className="button-icon" />
-            Discard
-          </button>
+          {canStart ? (
+            <Button
+              variant="default"
+              onClick={() => void onStart()}
+              disabled={busyAction === "start-recording"}
+            >
+              <Radio aria-hidden="true" className="size-4" />
+              Start Recording
+            </Button>
+          ) : (
+            <>
+              {isRecording ? (
+                <Button variant="outline" onClick={onPause}>
+                  <Pause aria-hidden="true" className="size-4" />
+                  Pause
+                </Button>
+              ) : isPaused ? (
+                <Button variant="outline" onClick={onResume}>
+                  <Play aria-hidden="true" className="size-4" />
+                  Resume
+                </Button>
+              ) : null}
+
+              <Button
+                variant="default"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-600 dark:hover:bg-emerald-700 dark:text-white"
+                onClick={() => void onStop()}
+              >
+                <Save aria-hidden="true" className="size-4" />
+                Stop & Save
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={onDiscard}
+              >
+                <Trash2 aria-hidden="true" className="size-4" />
+                Discard
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
       <dl className="recorder-stats">
-        <div>
+        <div className="stat-card">
           <dt>Elapsed</dt>
-          <dd>{formatDuration(status.recordingElapsedMs)}</dd>
+          <dd className="timer-font">{formatDuration(status.recordingElapsedMs)}</dd>
         </div>
-        <div>
+        <div className="stat-card">
           <dt>Events captured</dt>
           <dd>{status.recordingEventCount}</dd>
         </div>
-        <div>
+        <div className="stat-card">
           <dt>State</dt>
           <dd>{stateLabel(status.state)}</dd>
         </div>
@@ -876,39 +1066,39 @@ function ScriptDetail({
   return (
     <section className="detail-layout">
       <div className="panel detail-editor">
-        <label>
+        <label className="form-label">
           Script name
-          <input
+          <Input
             value={detailName}
             onChange={(event) => onNameChange(event.currentTarget.value)}
           />
         </label>
-        <label>
+        <label className="form-label">
           Description
           <textarea
             value={detailDescription}
             onChange={(event) => onDescriptionChange(event.currentTarget.value)}
             rows={3}
+            className="workspace-textarea"
           />
         </label>
         <div className="button-row">
-          <button
-            className="primary-button"
-            type="button"
+          <Button
+            variant="default"
             onClick={() => void onSave()}
             disabled={busyAction === "save-detail"}
           >
-            <Save aria-hidden="true" className="button-icon" />
+            <Save aria-hidden="true" className="size-4" />
             Save
-          </button>
-          <button type="button" onClick={onReplay}>
-            <Play aria-hidden="true" className="button-icon" />
+          </Button>
+          <Button variant="outline" onClick={onReplay}>
+            <Play aria-hidden="true" className="size-4" />
             Replay
-          </button>
-          <button className="ghost-danger" type="button" onClick={onDelete}>
-            <Trash2 aria-hidden="true" className="button-icon" />
+          </Button>
+          <Button variant="destructive" onClick={onDelete}>
+            <Trash2 aria-hidden="true" className="size-4" />
             Delete
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -917,9 +1107,9 @@ function ScriptDetail({
           <SlidersHorizontal aria-hidden="true" className="section-icon" />
           Replay Options
         </h3>
-        <label>
+        <label className="form-label">
           Speed
-          <input
+          <Input
             type="number"
             min="0.1"
             step="0.1"
@@ -932,9 +1122,9 @@ function ScriptDetail({
             }
           />
         </label>
-        <label>
+        <label className="form-label">
           Countdown (ms)
-          <input
+          <Input
             type="number"
             min="0"
             step="250"
@@ -957,8 +1147,9 @@ function ScriptDetail({
                 useOriginalTiming: event.currentTarget.checked,
               })
             }
+            className="workspace-checkbox"
           />
-          Original timing
+          <span>Original timing</span>
         </label>
         <label className="checkbox-row">
           <input
@@ -970,8 +1161,9 @@ function ScriptDetail({
                 skipMouseMoves: event.currentTarget.checked,
               })
             }
+            className="workspace-checkbox"
           />
-          Skip mouse moves
+          <span>Skip mouse moves</span>
         </label>
       </div>
 
@@ -980,27 +1172,31 @@ function ScriptDetail({
           <Keyboard aria-hidden="true" className="section-icon" />
           Shortcut
         </h3>
-        <p className="current-shortcut">
-          {shortcut?.accelerator ?? "No shortcut assigned"}
-        </p>
-        <input
+        <div className="shortcut-box">
+          <p className="eyebrow">Current Binding</p>
+          <p className="current-shortcut">
+            {shortcut?.accelerator ?? "No shortcut assigned"}
+          </p>
+        </div>
+        <Input
           value={shortcutDraft}
           onChange={(event) => onShortcutDraftChange(event.currentTarget.value)}
+          placeholder="e.g. CommandOrControl+Alt+1"
         />
         <div className="button-row">
-          <button type="button" onClick={() => void onBindShortcut()}>
-            <Save aria-hidden="true" className="button-icon" />
+          <Button variant="default" onClick={() => void onBindShortcut()} className="flex-1">
+            <Save aria-hidden="true" className="size-4" />
             Assign
-          </button>
-          <button
-            className="ghost-danger"
-            type="button"
+          </Button>
+          <Button
+            variant="destructive"
             onClick={() => void onUnbindShortcut()}
             disabled={!shortcut}
+            className="flex-1"
           >
-            <Trash2 aria-hidden="true" className="button-icon" />
+            <Trash2 aria-hidden="true" className="size-4" />
             Remove
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -1020,8 +1216,27 @@ function ScriptDetail({
 
 function EventTimeline({ events }: { events: ScriptEvent[] }) {
   if (events.length === 0) {
-    return <p className="muted-text">No events captured.</p>;
+    return <p className="muted-text text-center py-6">No events captured.</p>;
   }
+
+  const getEventIcon = (kind: string) => {
+    switch (kind) {
+      case "mouse_move":
+        return <MousePointer2 className="size-3.5 text-sky-500" />;
+      case "mouse_down":
+      case "mouse_up":
+        return <MousePointer2 className="size-3.5 text-indigo-500" />;
+      case "mouse_scroll":
+        return <Scroll className="size-3.5 text-amber-500" />;
+      case "key_down":
+      case "key_up":
+        return <Keyboard className="size-3.5 text-purple-500" />;
+      case "text":
+        return <Keyboard className="size-3.5 text-emerald-500" />;
+      default:
+        return <Database className="size-3.5 text-muted-foreground" />;
+    }
+  };
 
   return (
     <div className="timeline-table">
@@ -1031,14 +1246,19 @@ function EventTimeline({ events }: { events: ScriptEvent[] }) {
         <span>Input</span>
         <span>Position</span>
       </div>
-      {events.slice(0, 500).map((event) => (
-        <div className="timeline-row" key={event.id}>
-          <span>{formatDuration(event.timestampMs)}</span>
-          <span>{eventKindLabel(event.kind)}</span>
-          <span>{eventInput(event)}</span>
-          <span>{eventPosition(event)}</span>
-        </div>
-      ))}
+      <div className="timeline-body">
+        {events.slice(0, 500).map((event) => (
+          <div className="timeline-row" key={event.id}>
+            <span className="timer-font">{formatDuration(event.timestampMs)}</span>
+            <span className="event-type-cell">
+              {getEventIcon(event.kind)}
+              <span className="capitalize">{eventKindLabel(event.kind)}</span>
+            </span>
+            <span className="font-mono text-xs">{eventInput(event)}</span>
+            <span className="font-mono text-xs text-muted-foreground">{eventPosition(event)}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1049,12 +1269,15 @@ type SettingsProps = {
   exportPayload: string;
   importPayload: string;
   busyAction: string | null;
+  updaterStatus: UpdaterStatus;
   onSettingsChange: (settings: AppSettings) => void;
   onSaveSettings: () => Promise<void>;
   onExportScripts: () => Promise<void>;
   onImportPayloadChange: (value: string) => void;
   onImportScripts: () => Promise<void>;
   onDeleteAllScripts: () => Promise<void>;
+  onCheckForUpdates: () => Promise<void>;
+  onInstallUpdate: () => Promise<void>;
 };
 
 function Settings({
@@ -1063,12 +1286,15 @@ function Settings({
   exportPayload,
   importPayload,
   busyAction,
+  updaterStatus,
   onSettingsChange,
   onSaveSettings,
   onExportScripts,
   onImportPayloadChange,
   onImportScripts,
   onDeleteAllScripts,
+  onCheckForUpdates,
+  onInstallUpdate,
 }: SettingsProps) {
   return (
     <section className="settings-grid">
@@ -1077,9 +1303,9 @@ function Settings({
           <SlidersHorizontal aria-hidden="true" className="section-icon" />
           Replay Defaults
         </h3>
-        <label>
+        <label className="form-label">
           Default speed
-          <input
+          <Input
             type="number"
             min="0.1"
             step="0.1"
@@ -1092,9 +1318,9 @@ function Settings({
             }
           />
         </label>
-        <label>
+        <label className="form-label">
           Countdown (ms)
-          <input
+          <Input
             type="number"
             min="0"
             step="250"
@@ -1107,9 +1333,9 @@ function Settings({
             }
           />
         </label>
-        <label>
+        <label className="form-label">
           Emergency stop shortcut
-          <input
+          <Input
             value={settings.emergencyStopShortcut}
             onChange={(event) =>
               onSettingsChange({
@@ -1129,18 +1355,19 @@ function Settings({
                 skipMouseMoveNoise: event.currentTarget.checked,
               })
             }
+            className="workspace-checkbox"
           />
-          Skip mouse moves by default
+          <span>Skip mouse moves by default</span>
         </label>
-        <button
-          className="primary-button"
-          type="button"
+        <Button
+          variant="default"
           onClick={() => void onSaveSettings()}
           disabled={busyAction === "save-settings"}
+          className="w-full sm:w-auto"
         >
-          <Save aria-hidden="true" className="button-icon" />
+          <Save aria-hidden="true" className="size-4" />
           Save Settings
-        </button>
+        </Button>
       </div>
 
       <div className="panel settings-panel">
@@ -1158,8 +1385,9 @@ function Settings({
                 recordMouseMoves: event.currentTarget.checked,
               })
             }
+            className="workspace-checkbox"
           />
-          Record mouse move events
+          <span>Record mouse move events</span>
         </label>
         <p className="muted-text">
           Mouse moves are sampled at most every 100ms when this is enabled.
@@ -1182,68 +1410,107 @@ function Settings({
           </div>
           <div>
             <dt>Replay</dt>
-            <dd>{status.platform.replaySupported ? "supported" : "limited"}</dd>
+            <dd className="capitalize">{status.platform.replaySupported ? "supported" : "limited"}</dd>
           </div>
           <div>
             <dt>Recording</dt>
-            <dd>{status.platform.recordingSupported ? "supported" : "limited"}</dd>
+            <dd className="capitalize">{status.platform.recordingSupported ? "supported" : "limited"}</dd>
           </div>
           <div>
             <dt>macOS Accessibility</dt>
-            <dd>{status.permissions.macosAccessibility}</dd>
+            <dd className="capitalize">{status.permissions.macosAccessibility}</dd>
           </div>
           <div>
             <dt>macOS Input Monitoring</dt>
-            <dd>{status.permissions.macosInputMonitoring}</dd>
+            <dd className="capitalize">{status.permissions.macosInputMonitoring}</dd>
           </div>
           <div>
-            <dt>Data</dt>
-            <dd>{status.dataDir || "pending"}</dd>
+            <dt>Data Directory</dt>
+            <dd className="text-xs break-all font-mono opacity-80">{status.dataDir || "pending"}</dd>
           </div>
         </dl>
+      </div>
+
+      <div className="panel settings-panel">
+        <h3>
+          <Download aria-hidden="true" className="section-icon" />
+          Updates
+        </h3>
+        <p className="muted-text">{updaterStatusText(updaterStatus)}</p>
+        {updaterStatus.state === "downloading" ? (
+          <UpdateProgress status={updaterStatus} />
+        ) : null}
+        <div className="button-row">
+          <Button
+            variant="outline"
+            onClick={() => void onCheckForUpdates()}
+            disabled={
+              updaterStatus.state === "checking" ||
+              updaterStatus.state === "downloading" ||
+              updaterStatus.state === "installing"
+            }
+          >
+            <Download aria-hidden="true" className="size-4" />
+            Check for Updates
+          </Button>
+          {updaterStatus.state === "available" ? (
+            <Button variant="default" onClick={() => void onInstallUpdate()}>
+              <Download aria-hidden="true" className="size-4" />
+              Install Update
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="panel settings-panel data-panel">
         <h3>
           <Database aria-hidden="true" className="section-icon" />
-          Data
+          Data Backup & Reset
         </h3>
         <div className="button-row">
-          <button type="button" onClick={() => void onExportScripts()}>
-            <Download aria-hidden="true" className="button-icon" />
-            Export All
-          </button>
-          <button
-            className="ghost-danger"
-            type="button"
+          <Button variant="outline" onClick={() => void onExportScripts()}>
+            <Download aria-hidden="true" className="size-4" />
+            Export All Scripts
+          </Button>
+          <Button
+            variant="destructive"
             onClick={() => void onDeleteAllScripts()}
           >
-            <Trash2 aria-hidden="true" className="button-icon" />
-            Delete All
-          </button>
+            <Trash2 aria-hidden="true" className="size-4" />
+            Delete All Scripts
+          </Button>
         </div>
-        <textarea
-          className="payload-box"
-          value={exportPayload}
-          readOnly
-          placeholder="Exported JSON appears here"
-          rows={8}
-        />
-        <textarea
-          className="payload-box"
-          value={importPayload}
-          onChange={(event) => onImportPayloadChange(event.currentTarget.value)}
-          placeholder="Paste exported JSON to import"
-          rows={8}
-        />
-        <button
-          type="button"
+        <div className="data-box-group">
+          <label className="form-label">
+            Export Payload
+            <textarea
+              className="payload-box workspace-textarea"
+              value={exportPayload}
+              readOnly
+              placeholder="Exported JSON will appear here after clicking Export All."
+              rows={6}
+            />
+          </label>
+          <label className="form-label">
+            Import Payload
+            <textarea
+              className="payload-box workspace-textarea"
+              value={importPayload}
+              onChange={(event) => onImportPayloadChange(event.currentTarget.value)}
+              placeholder="Paste exported JSON here to import scripts."
+              rows={6}
+            />
+          </label>
+        </div>
+        <Button
+          variant="default"
           onClick={() => void onImportScripts()}
           disabled={!importPayload.trim()}
+          className="w-full sm:w-auto"
         >
-          <Upload aria-hidden="true" className="button-icon" />
-          Import
-        </button>
+          <Upload aria-hidden="true" className="size-4" />
+          Import Scripts
+        </Button>
       </div>
     </section>
   );
@@ -1252,9 +1519,13 @@ function Settings({
 function StatusBanners({
   status,
   notice,
+  updaterStatus,
+  onInstallUpdate,
 }: {
   status: AppStatus;
   notice: Notice | null;
+  updaterStatus: UpdaterStatus;
+  onInstallUpdate: () => Promise<void>;
 }) {
   const platformWarning =
     status.platform.waylandNote ||
@@ -1262,21 +1533,135 @@ function StatusBanners({
       ? "macOS may require Accessibility and Input Monitoring permission before capture or replay works."
       : null);
 
+  const getNoticeIcon = (tone: Notice["tone"]) => {
+    switch (tone) {
+      case "success":
+        return <CheckCircle className="size-4 shrink-0 text-emerald-500" />;
+      case "info":
+        return <Info className="size-4 shrink-0 text-sky-500" />;
+      case "warning":
+        return <AlertTriangle className="size-4 shrink-0 text-amber-500" />;
+      case "danger":
+        return <AlertTriangle className="size-4 shrink-0 text-red-500" />;
+      default:
+        return <Info className="size-4 shrink-0" />;
+    }
+  };
+
   return (
     <div className="banner-stack">
       {platformWarning ? (
-        <div className="status-banner warning">{platformWarning}</div>
+        <div className="status-banner warning">
+          <AlertTriangle className="size-4 shrink-0 text-amber-500" />
+          <span>{platformWarning}</span>
+        </div>
       ) : null}
       {status.state === "replaying" ? (
         <div className="status-banner info">
-          Replay active. Emergency stop: {status.emergencyStopShortcut}
+          <Info className="size-4 shrink-0 text-sky-500" />
+          <span>Replay active. Emergency stop: {status.emergencyStopShortcut}</span>
+        </div>
+      ) : null}
+      {updaterStatus.state !== "idle" ? (
+        <div className={`status-banner ${updaterBannerTone(updaterStatus)}`}>
+          <Download className="size-4 shrink-0" />
+          <div className="status-banner-content">
+            <span>{updaterStatusText(updaterStatus)}</span>
+            {updaterStatus.state === "downloading" ? (
+              <UpdateProgress status={updaterStatus} />
+            ) : null}
+          </div>
+          {updaterStatus.state === "available" ? (
+            <Button
+              size="sm"
+              onClick={() => void onInstallUpdate()}
+              className="status-banner-action"
+            >
+              Install
+            </Button>
+          ) : null}
         </div>
       ) : null}
       {notice ? (
-        <div className={`status-banner ${notice.tone}`}>{notice.message}</div>
+        <div className={`status-banner ${notice.tone}`}>
+          {getNoticeIcon(notice.tone)}
+          <span>{notice.message}</span>
+        </div>
       ) : null}
     </div>
   );
+}
+
+function updaterBannerTone(status: UpdaterStatus): Notice["tone"] {
+  if (status.state === "available" || status.state === "downloading" || status.state === "installing") {
+    return "info";
+  }
+
+  if (status.state === "upToDate") {
+    return "success";
+  }
+
+  if (status.state === "error") {
+    return "warning";
+  }
+
+  return "info";
+}
+
+function updaterStatusText(status: UpdaterStatus) {
+  switch (status.state) {
+    case "checking":
+      return "Checking GitHub Releases for updates.";
+    case "available":
+      return `Update ${status.version} is available.`;
+    case "downloading": {
+      const total = status.totalBytes ? ` of ${formatBytes(status.totalBytes)}` : "";
+      return `Downloading update${status.version ? ` ${status.version}` : ""}: ${formatBytes(
+        status.downloadedBytes ?? 0,
+      )}${total}.`;
+    }
+    case "installing":
+      return status.message ?? "Installing update. TIA Operator will restart when it is ready.";
+    case "upToDate":
+      return status.message ?? "TIA Operator is up to date.";
+    case "error":
+      return status.message ?? "Update check failed.";
+    case "idle":
+    default:
+      return "TIA Operator checks GitHub Releases for signed updates.";
+  }
+}
+
+function UpdateProgress({ status }: { status: UpdaterStatus }) {
+  const progress =
+    status.totalBytes && status.totalBytes > 0
+      ? Math.min(100, Math.round(((status.downloadedBytes ?? 0) / status.totalBytes) * 100))
+      : null;
+
+  return (
+    <div className="update-progress" aria-label="Update download progress">
+      <div
+        className="update-progress-bar"
+        style={{ width: `${progress ?? 18}%` }}
+      />
+      <span>{progress === null ? "Downloading" : `${progress}%`}</span>
+    </div>
+  );
+}
+
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** index;
+  return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function createDemoEvents(): ScriptEvent[] {
