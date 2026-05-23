@@ -46,7 +46,9 @@ impl ReplayService {
                 json!({
                     "scriptId": script.id,
                     "countdownMs": options.countdown_ms,
-                    "eventCount": script.events.len()
+                    "eventCount": script.events.len(),
+                    "loopEnabled": options.loop_enabled,
+                    "loopIntervalMs": options.loop_interval_ms
                 }),
             );
 
@@ -65,36 +67,67 @@ impl ReplayService {
                 script.events.clone()
             };
             let total = events.len();
-            let mut previous_ts = 0;
             let mut replay_error = None;
+            let mut loop_index = 0_u64;
 
-            for (index, event) in events.iter().enumerate() {
+            loop {
                 if token.is_stopped() {
                     break;
                 }
 
-                if options.use_original_timing {
-                    let delay = event.timestamp_ms.saturating_sub(previous_ts);
-                    let adjusted_delay = (delay as f64 / speed).round() as u64;
-                    if adjusted_delay > 0 {
-                        std::thread::sleep(Duration::from_millis(adjusted_delay));
+                loop_index += 1;
+                let mut previous_ts = 0;
+
+                for (index, event) in events.iter().enumerate() {
+                    if token.is_stopped() {
+                        break;
                     }
+
+                    if options.use_original_timing {
+                        let delay = event.timestamp_ms.saturating_sub(previous_ts);
+                        let adjusted_delay = (delay as f64 / speed).round() as u64;
+                        wait_countdown(&token, adjusted_delay);
+                    }
+
+                    if token.is_stopped() {
+                        break;
+                    }
+
+                    if let Err(error) = backend.replay_event(event) {
+                        replay_error = Some(error.to_string());
+                        break;
+                    }
+
+                    previous_ts = event.timestamp_ms;
+                    let _ = app.emit(
+                        "replay:progress",
+                        json!({
+                            "scriptId": script.id,
+                            "index": index + 1,
+                            "total": total,
+                            "loopIndex": loop_index
+                        }),
+                    );
                 }
 
-                if let Err(error) = backend.replay_event(event) {
-                    replay_error = Some(error.to_string());
+                if replay_error.is_some()
+                    || token.is_stopped()
+                    || !options.loop_enabled
+                    || total == 0
+                {
                     break;
                 }
 
-                previous_ts = event.timestamp_ms;
                 let _ = app.emit(
-                    "replay:progress",
+                    "replay:loopCompleted",
                     json!({
                         "scriptId": script.id,
-                        "index": index + 1,
-                        "total": total
+                        "loopIndex": loop_index,
+                        "nextIntervalMs": options.loop_interval_ms
                     }),
                 );
+
+                wait_countdown(&token, options.loop_interval_ms);
             }
 
             {

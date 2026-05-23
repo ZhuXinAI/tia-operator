@@ -396,6 +396,12 @@ label {
   flex-wrap: wrap;
 }
 
+.workspace [data-slot="button"] {
+  min-width: 0;
+  white-space: normal;
+  text-align: center;
+}
+
 .button-icon,
 .section-icon {
   width: 15px;
@@ -776,7 +782,11 @@ label {
 
 .workspace-checkbox {
   width: 16px;
+  min-width: 16px;
   height: 16px;
+  min-height: 16px;
+  flex: 0 0 16px;
+  padding: 0;
   border-radius: 4px;
   border: 1.5px solid var(--border);
   background: var(--card);
@@ -893,13 +903,20 @@ label {
 
 .checkbox-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   color: var(--foreground);
   font-size: 13.5px;
   font-weight: 500;
   cursor: pointer;
   user-select: none;
+  min-width: 0;
+  line-height: 1.45;
+}
+
+.checkbox-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .timeline-panel {
@@ -1002,6 +1019,65 @@ label {
   gap: 16px;
 }
 
+.settings-control-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--muted) 32%, var(--card));
+}
+
+.settings-checkbox-row {
+  align-items: center;
+  font-weight: 700;
+}
+
+.settings-control-card .muted-text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.settings-list > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.55fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  min-width: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+}
+
+.settings-list > div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.settings-list dt,
+.settings-list dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-list dt {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-list dd {
+  color: var(--foreground);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
 .data-panel {
   grid-column: 1 / -1;
 }
@@ -1037,6 +1113,11 @@ label {
   .timeline-panel,
   .data-panel {
     grid-column: auto;
+  }
+
+  .settings-list > div {
+    grid-template-columns: 1fr;
+    gap: 3px;
   }
 }
 

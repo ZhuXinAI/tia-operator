@@ -50,6 +50,8 @@ pub fn handle_global_shortcut(app: &AppHandle, shortcut: &Shortcut, event: Short
                 countdown_ms: settings.default_countdown_ms,
                 use_original_timing: true,
                 skip_mouse_moves: settings.skip_mouse_move_noise,
+                loop_enabled: settings.default_loop_enabled,
+                loop_interval_ms: settings.default_loop_interval_ms,
                 fail_if_window_changed: None,
             };
 

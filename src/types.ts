@@ -73,16 +73,21 @@ export type ReplayOptions = {
   countdownMs: number;
   useOriginalTiming: boolean;
   skipMouseMoves: boolean;
+  loopEnabled: boolean;
+  loopIntervalMs: number;
   failIfWindowChanged?: boolean | null;
 };
 
 export type AppSettings = {
   defaultReplaySpeed: number;
   defaultCountdownMs: number;
+  defaultLoopEnabled: boolean;
+  defaultLoopIntervalMs: number;
   emergencyStopShortcut: string;
   skipMouseMoveNoise: boolean;
   recordMouseMoves: boolean;
   showReplayOverlay: boolean;
+  language: string;
 };
 
 export type PlatformStatus = {

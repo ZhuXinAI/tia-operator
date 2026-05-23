@@ -31,6 +31,11 @@ import { operatorApi } from "./api/operatorApi";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import {
+  createI18n,
+  languageOptions,
+  type I18n,
+} from "./i18n";
+import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -104,10 +109,13 @@ const defaultStatus: AppStatus = {
 const defaultSettings: AppSettings = {
   defaultReplaySpeed: 1,
   defaultCountdownMs: 3000,
+  defaultLoopEnabled: false,
+  defaultLoopIntervalMs: 1000,
   emergencyStopShortcut: "CommandOrControl+Alt+Escape",
   skipMouseMoveNoise: false,
   recordMouseMoves: false,
   showReplayOverlay: true,
+  language: "system",
 };
 
 const defaultReplayOptions: ReplayOptions = {
@@ -115,6 +123,8 @@ const defaultReplayOptions: ReplayOptions = {
   countdownMs: 3000,
   useOriginalTiming: true,
   skipMouseMoves: false,
+  loopEnabled: false,
+  loopIntervalMs: 1000,
   failIfWindowChanged: null,
 };
 
@@ -149,7 +159,9 @@ function App() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("updated");
-  const [recordingName, setRecordingName] = useState("New automation");
+  const [recordingName, setRecordingName] = useState(() =>
+    createI18n("system").t("script.newAutomation"),
+  );
   const [recordingDescription, setRecordingDescription] = useState("");
   const [detailName, setDetailName] = useState("");
   const [detailDescription, setDetailDescription] = useState("");
@@ -159,6 +171,21 @@ function App() {
   const [exportPayload, setExportPayload] = useState("");
   const [importPayload, setImportPayload] = useState("");
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const i18n = useMemo(() => createI18n(settings.language), [settings.language]);
+  const { t } = i18n;
+
+  useEffect(() => {
+    document.documentElement.lang = i18n.locale;
+    document.documentElement.dir = "ltr";
+  }, [i18n.locale]);
+
+  useEffect(() => {
+    setRecordingName((current) =>
+      current === "New automation" || current === "新自动化"
+        ? t("script.newAutomation")
+        : current,
+    );
+  }, [t]);
 
   const refresh = useCallback(async () => {
     const [nextScripts, nextShortcuts, nextStatus, nextSettings] =
@@ -177,6 +204,8 @@ function App() {
       speedMultiplier: nextSettings.defaultReplaySpeed,
       countdownMs: nextSettings.defaultCountdownMs,
       skipMouseMoves: nextSettings.skipMouseMoveNoise,
+      loopEnabled: nextSettings.defaultLoopEnabled,
+      loopIntervalMs: nextSettings.defaultLoopIntervalMs,
     }));
   }, []);
 
@@ -190,7 +219,7 @@ function App() {
       if (!update) {
         setUpdaterStatus(
           manual
-            ? { state: "upToDate", message: "TIA Operator is up to date." }
+            ? { state: "upToDate", message: t("notice.upToDate") }
             : { state: "idle" },
         );
         return;
@@ -209,12 +238,14 @@ function App() {
         manual
           ? {
               state: "error",
-              message: `Update check failed: ${getErrorMessage(error)}`,
+              message: t("notice.updateCheckFailed", {
+                message: getErrorMessage(error),
+              }),
             }
           : { state: "idle" },
       );
     }
-  }, []);
+  }, [t]);
 
   const installUpdate = useCallback(async () => {
     setUpdaterStatus((current) => ({
@@ -229,7 +260,7 @@ function App() {
       if (!update) {
         setUpdaterStatus({
           state: "upToDate",
-          message: "The release feed no longer has a newer version.",
+          message: t("notice.updateFeedChanged"),
         });
         return;
       }
@@ -265,16 +296,18 @@ function App() {
         state: "installing",
         version,
         currentVersion: update.currentVersion,
-        message: "Update installed. Restarting TIA Operator.",
+        message: t("notice.updateInstalled"),
       });
       await operatorApi.restartApp();
     } catch (error) {
       setUpdaterStatus({
         state: "error",
-        message: `Update install failed: ${getErrorMessage(error)}`,
+        message: t("notice.updateInstallFailed", {
+          message: getErrorMessage(error),
+        }),
       });
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     refresh().catch((error: Error) =>
@@ -324,7 +357,9 @@ function App() {
         }));
         setNotice({
           tone: "info",
-          message: `Replay started: ${findScriptName(scripts, event.payload.scriptId)}`,
+          message: t("notice.replayStarted", {
+            name: findScriptName(scripts, event.payload.scriptId),
+          }),
         });
       }),
       listen("replay:stopped", () => {
@@ -340,7 +375,9 @@ function App() {
       listen<{ accelerator: string }>("shortcut:triggered", (event) => {
         setNotice({
           tone: "info",
-          message: `Shortcut triggered: ${event.payload.accelerator}`,
+          message: t("notice.shortcutTriggered", {
+            accelerator: event.payload.accelerator,
+          }),
         });
       }),
       listen<{ message: string }>("shortcut:error", (event) => {
@@ -353,7 +390,7 @@ function App() {
         unlisteners.forEach((unlisten) => unlisten());
       });
     };
-  }, [refresh, scripts]);
+  }, [refresh, scripts, t]);
 
   useEffect(() => {
     if (selectedScript) {
@@ -410,7 +447,7 @@ function App() {
     } catch (error) {
       setNotice({
         tone: "danger",
-        message: error instanceof Error ? error.message : "Action failed",
+        message: error instanceof Error ? error.message : t("error.actionFailed"),
       });
     } finally {
       setBusyAction(null);
@@ -433,7 +470,7 @@ function App() {
       });
       setStatus((current) => ({ ...current, state: "recording" }));
       setView("recorder");
-      setNotice({ tone: "success", message: "Recording started" });
+      setNotice({ tone: "success", message: t("notice.recordingStarted") });
     });
   };
 
@@ -446,7 +483,7 @@ function App() {
       setSelectedScript(script);
       setView("detail");
       await refresh();
-      setNotice({ tone: "success", message: "Recording saved" });
+      setNotice({ tone: "success", message: t("notice.recordingSaved") });
     });
   };
 
@@ -469,12 +506,12 @@ function App() {
       });
       setSelectedScript(updated);
       await refresh();
-      setNotice({ tone: "success", message: "Script saved" });
+      setNotice({ tone: "success", message: t("notice.scriptSaved") });
     });
   };
 
   const deleteScript = async (scriptId: string) => {
-    const confirmed = window.confirm("Delete this script?");
+    const confirmed = window.confirm(t("confirm.deleteScript"));
     if (!confirmed) {
       return;
     }
@@ -486,21 +523,21 @@ function App() {
         setView("dashboard");
       }
       await refresh();
-      setNotice({ tone: "success", message: "Script deleted" });
+      setNotice({ tone: "success", message: t("notice.scriptDeleted") });
     });
   };
 
   const createDemoScript = async () => {
     await runAction("demo-script", async () => {
       const script = await operatorApi.createScript({
-        name: "Type sample text",
-        description: "A local sample script for testing replay safely.",
+        name: t("script.demoName"),
+        description: t("script.demoDescription"),
         events: createDemoEvents(),
       });
       setSelectedScript(script);
       setView("detail");
       await refresh();
-      setNotice({ tone: "success", message: "Sample script created" });
+      setNotice({ tone: "success", message: t("notice.sampleCreated") });
     });
   };
 
@@ -519,7 +556,7 @@ function App() {
       }
       await operatorApi.bindShortcut(selectedScript.id, shortcutDraft);
       await refresh();
-      setNotice({ tone: "success", message: "Shortcut assigned" });
+      setNotice({ tone: "success", message: t("notice.shortcutAssigned") });
     });
   };
 
@@ -531,7 +568,7 @@ function App() {
     await runAction("unbind-shortcut", async () => {
       await operatorApi.unbindShortcut(selectedShortcut.id);
       await refresh();
-      setNotice({ tone: "success", message: "Shortcut removed" });
+      setNotice({ tone: "success", message: t("notice.shortcutRemoved") });
     });
   };
 
@@ -540,7 +577,7 @@ function App() {
       const saved = await operatorApi.updateSettings(settings);
       setSettings(saved);
       await refresh();
-      setNotice({ tone: "success", message: "Settings saved" });
+      setNotice({ tone: "success", message: t("notice.settingsSaved") });
     });
   };
 
@@ -548,7 +585,7 @@ function App() {
     await runAction("export-scripts", async () => {
       const payload = await operatorApi.exportAllScripts();
       setExportPayload(payload);
-      setNotice({ tone: "success", message: "Export is ready below" });
+      setNotice({ tone: "success", message: t("notice.exportReady") });
     });
   };
 
@@ -557,12 +594,12 @@ function App() {
       await operatorApi.importScripts(importPayload);
       setImportPayload("");
       await refresh();
-      setNotice({ tone: "success", message: "Scripts imported" });
+      setNotice({ tone: "success", message: t("notice.scriptsImported") });
     });
   };
 
   const deleteAllScripts = async () => {
-    const confirmed = window.confirm("Delete all local scripts?");
+    const confirmed = window.confirm(t("confirm.deleteAllScripts"));
     if (!confirmed) {
       return;
     }
@@ -571,7 +608,7 @@ function App() {
       await operatorApi.deleteAllScripts();
       setSelectedScript(null);
       await refresh();
-      setNotice({ tone: "success", message: "All scripts deleted" });
+      setNotice({ tone: "success", message: t("notice.allScriptsDeleted") });
     });
   };
 
@@ -583,44 +620,44 @@ function App() {
             <div className="brand-mark">TO</div>
             <div className="brand-copy">
               <h1>TIA Operator</h1>
-              <p>Local desktop macros</p>
+              <p>{t("app.tagline")}</p>
             </div>
           </div>
         </SidebarHeader>
 
         <SidebarContent>
           <SidebarGroup>
-            <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+            <SidebarGroupLabel>{t("nav.workspace")}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={view === "dashboard"}
-                    tooltip="Dashboard"
+                    tooltip={t("nav.dashboard")}
                     onClick={() => setView("dashboard")}
                   >
                     <LayoutDashboard aria-hidden="true" />
-                    <span>Dashboard</span>
+                    <span>{t("nav.dashboard")}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={view === "recorder"}
-                    tooltip="Recorder"
+                    tooltip={t("nav.recorder")}
                     onClick={() => setView("recorder")}
                   >
                     <Radio aria-hidden="true" />
-                    <span>Recorder</span>
+                    <span>{t("nav.recorder")}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={view === "settings"}
-                    tooltip="Settings"
+                    tooltip={t("nav.settings")}
                     onClick={() => setView("settings")}
                   >
                     <SettingsIcon aria-hidden="true" />
-                    <span>Settings</span>
+                    <span>{t("nav.settings")}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </SidebarMenu>
@@ -632,9 +669,11 @@ function App() {
           <div className="sidebar-footer-container">
             <div className={`mode-pill ${status.state}`}>
               <span aria-hidden="true" />
-              <strong>{stateLabel(status.state)}</strong>
+              <strong>{stateLabel(status.state, i18n)}</strong>
             </div>
-            <p className="shortcut-note">Stop: {status.emergencyStopShortcut}</p>
+            <p className="shortcut-note">
+              {t("sidebar.stop", { shortcut: status.emergencyStopShortcut })}
+            </p>
 
             <div className="theme-toggle-container">
               <div className="theme-toggle-buttons">
@@ -642,19 +681,19 @@ function App() {
                   type="button"
                   className={`theme-btn ${theme === "light" ? "active" : ""}`}
                   onClick={() => setTheme("light")}
-                  title="Light Mode"
+                  title={t("theme.lightMode")}
                 >
                   <Sun size={14} />
-                  <span>Light</span>
+                  <span>{t("theme.light")}</span>
                 </button>
                 <button
                   type="button"
                   className={`theme-btn ${theme === "dark" ? "active" : ""}`}
                   onClick={() => setTheme("dark")}
-                  title="Dark Mode"
+                  title={t("theme.darkMode")}
                 >
                   <Moon size={14} />
-                  <span>Dark</span>
+                  <span>{t("theme.dark")}</span>
                 </button>
               </div>
             </div>
@@ -668,20 +707,20 @@ function App() {
           <div className="topbar-title">
             <SidebarTrigger className="sidebar-trigger" />
             <div>
-              <p className="eyebrow">Private by default</p>
-              <h2>{viewTitle(view, selectedScript)}</h2>
+              <p className="eyebrow">{t("topbar.eyebrow")}</p>
+              <h2>{viewTitle(view, selectedScript, i18n)}</h2>
             </div>
           </div>
           <div className="topbar-actions">
             {status.state === "replaying" ? (
               <Button variant="destructive" onClick={() => void operatorApi.stopReplay()}>
                 <Square aria-hidden="true" className="size-4" />
-                Stop Replay
+                {t("topbar.stopReplay")}
               </Button>
             ) : null}
             <Button variant="default" onClick={() => void startRecording()}>
               <Plus aria-hidden="true" className="size-4" />
-              Record New Script
+              {t("topbar.recordNewScript")}
             </Button>
           </div>
         </header>
@@ -690,6 +729,7 @@ function App() {
           status={status}
           notice={notice}
           updaterStatus={updaterStatus}
+          i18n={i18n}
           onInstallUpdate={installUpdate}
         />
 
@@ -700,6 +740,7 @@ function App() {
             filter={filter}
             sortMode={sortMode}
             busyAction={busyAction}
+            i18n={i18n}
             onSearch={setSearch}
             onFilter={setFilter}
             onSort={setSortMode}
@@ -716,6 +757,7 @@ function App() {
             recordingName={recordingName}
             recordingDescription={recordingDescription}
             busyAction={busyAction}
+            i18n={i18n}
             onNameChange={setRecordingName}
             onDescriptionChange={setRecordingDescription}
             onStart={startRecording}
@@ -741,6 +783,7 @@ function App() {
             detailDescription={detailDescription}
             shortcutDraft={shortcutDraft}
             busyAction={busyAction}
+            i18n={i18n}
             onNameChange={setDetailName}
             onDescriptionChange={setDetailDescription}
             onReplayOptionsChange={setReplayOptions}
@@ -761,6 +804,7 @@ function App() {
             importPayload={importPayload}
             busyAction={busyAction}
             updaterStatus={updaterStatus}
+            i18n={i18n}
             onSettingsChange={setSettings}
             onSaveSettings={saveSettings}
             onExportScripts={exportScripts}
@@ -783,6 +827,7 @@ type DashboardProps = {
   filter: Filter;
   sortMode: SortMode;
   busyAction: string | null;
+  i18n: I18n;
   onSearch: (value: string) => void;
   onFilter: (value: Filter) => void;
   onSort: (value: SortMode) => void;
@@ -798,6 +843,7 @@ function Dashboard({
   filter,
   sortMode,
   busyAction,
+  i18n,
   onSearch,
   onFilter,
   onSort,
@@ -806,37 +852,39 @@ function Dashboard({
   onDelete,
   onCreateDemo,
 }: DashboardProps) {
+  const { t } = i18n;
+
   return (
     <section className="panel">
       <div className="toolbar-row">
         <div className="search-input-wrapper">
           <Input
-            aria-label="Search scripts"
+            aria-label={t("dashboard.searchAria")}
             className="search-input"
             value={search}
             onChange={(event) => onSearch(event.currentTarget.value)}
-            placeholder="Search scripts..."
+            placeholder={t("dashboard.searchPlaceholder")}
           />
         </div>
         <select
           value={filter}
           onChange={(event) => onFilter(event.currentTarget.value as Filter)}
-          aria-label="Filter scripts"
+          aria-label={t("dashboard.filterAria")}
           className="toolbar-select"
         >
-          <option value="all">All Shortcuts</option>
-          <option value="withShortcut">With shortcut</option>
-          <option value="withoutShortcut">No shortcut</option>
+          <option value="all">{t("dashboard.allShortcuts")}</option>
+          <option value="withShortcut">{t("dashboard.withShortcut")}</option>
+          <option value="withoutShortcut">{t("dashboard.noShortcut")}</option>
         </select>
         <select
           value={sortMode}
           onChange={(event) => onSort(event.currentTarget.value as SortMode)}
-          aria-label="Sort scripts"
+          aria-label={t("dashboard.sortAria")}
           className="toolbar-select"
         >
-          <option value="updated">Recently updated</option>
-          <option value="name">Name</option>
-          <option value="duration">Duration</option>
+          <option value="updated">{t("dashboard.recentlyUpdated")}</option>
+          <option value="name">{t("dashboard.name")}</option>
+          <option value="duration">{t("dashboard.duration")}</option>
         </select>
         <Button
           variant="outline"
@@ -845,14 +893,14 @@ function Dashboard({
           className="toolbar-btn"
         >
           <Plus aria-hidden="true" className="size-4" />
-          Add Sample
+          {t("dashboard.addSample")}
         </Button>
       </div>
 
       {scripts.length === 0 ? (
         <div className="empty-state">
-          <h3>No scripts yet</h3>
-          <p>Record a workflow or add a safe sample script.</p>
+          <h3>{t("dashboard.emptyTitle")}</h3>
+          <p>{t("dashboard.emptyBody")}</p>
         </div>
       ) : (
         <div className="script-grid">
@@ -862,33 +910,33 @@ function Dashboard({
                 <div className="card-heading-row">
                   <h3>{script.name}</h3>
                   <span className={script.shortcut ? "badge" : "badge muted"}>
-                    {script.shortcut ?? "No shortcut"}
+                    {script.shortcut ?? t("script.noShortcut")}
                   </span>
                 </div>
-                <p>{script.description || "No description"}</p>
+                <p>{script.description || t("script.noDescription")}</p>
               </div>
               <dl className="metric-row">
                 <div>
-                  <dt>Events</dt>
+                  <dt>{t("script.events")}</dt>
                   <dd>{script.eventCount}</dd>
                 </div>
                 <div>
-                  <dt>Duration</dt>
+                  <dt>{t("script.duration")}</dt>
                   <dd>{formatDuration(script.durationMs)}</dd>
                 </div>
                 <div>
-                  <dt>Updated</dt>
-                  <dd>{formatDate(script.updatedAt)}</dd>
+                  <dt>{t("script.updated")}</dt>
+                  <dd>{formatDate(script.updatedAt, i18n)}</dd>
                 </div>
               </dl>
               <div className="card-actions">
                 <Button size="sm" onClick={() => void onReplay(script.id)} className="flex-1">
                   <Play aria-hidden="true" className="size-3.5" />
-                  Replay
+                  {t("action.replay")}
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => void onOpen(script.id)} className="flex-1">
                   <Pencil aria-hidden="true" className="size-3.5" />
-                  Edit
+                  {t("action.edit")}
                 </Button>
                 <Button
                   variant="destructive"
@@ -897,7 +945,7 @@ function Dashboard({
                   className="flex-1"
                 >
                   <Trash2 aria-hidden="true" className="size-3.5" />
-                  Delete
+                  {t("action.delete")}
                 </Button>
               </div>
             </article>
@@ -913,6 +961,7 @@ type RecorderPanelProps = {
   recordingName: string;
   recordingDescription: string;
   busyAction: string | null;
+  i18n: I18n;
   onNameChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
   onStart: () => Promise<void>;
@@ -927,6 +976,7 @@ function RecorderPanel({
   recordingName,
   recordingDescription,
   busyAction,
+  i18n,
   onNameChange,
   onDescriptionChange,
   onStart,
@@ -935,6 +985,7 @@ function RecorderPanel({
   onStop,
   onDiscard,
 }: RecorderPanelProps) {
+  const { t } = i18n;
   const isRecording = status.state === "recording";
   const isPaused = status.state === "recordingPaused";
   const canStart = status.state === "idle";
@@ -944,10 +995,14 @@ function RecorderPanel({
       <div className="recorder-main">
         <div className={isRecording ? "recording-light active" : "recording-light"}>
           <span aria-hidden="true" className={isRecording ? "animate-pulse" : ""} />
-          {isRecording ? "Recording" : isPaused ? "Paused" : "Ready"}
+          {isRecording
+            ? t("recorder.statusRecording")
+            : isPaused
+              ? t("recorder.statusPaused")
+              : t("recorder.statusReady")}
         </div>
         <label className="form-label">
-          Script name
+          {t("recorder.scriptName")}
           <Input
             value={recordingName}
             onChange={(event) => onNameChange(event.currentTarget.value)}
@@ -955,7 +1010,7 @@ function RecorderPanel({
           />
         </label>
         <label className="form-label">
-          Description
+          {t("recorder.description")}
           <textarea
             value={recordingDescription}
             onChange={(event) => onDescriptionChange(event.currentTarget.value)}
@@ -972,19 +1027,19 @@ function RecorderPanel({
               disabled={busyAction === "start-recording"}
             >
               <Radio aria-hidden="true" className="size-4" />
-              Start Recording
+              {t("recorder.start")}
             </Button>
           ) : (
             <>
               {isRecording ? (
                 <Button variant="outline" onClick={onPause}>
                   <Pause aria-hidden="true" className="size-4" />
-                  Pause
+                  {t("recorder.pause")}
                 </Button>
               ) : isPaused ? (
                 <Button variant="outline" onClick={onResume}>
                   <Play aria-hidden="true" className="size-4" />
-                  Resume
+                  {t("recorder.resume")}
                 </Button>
               ) : null}
 
@@ -994,14 +1049,14 @@ function RecorderPanel({
                 onClick={() => void onStop()}
               >
                 <Save aria-hidden="true" className="size-4" />
-                Stop & Save
+                {t("recorder.stopSave")}
               </Button>
               <Button
                 variant="destructive"
                 onClick={onDiscard}
               >
                 <Trash2 aria-hidden="true" className="size-4" />
-                Discard
+                {t("recorder.discard")}
               </Button>
             </>
           )}
@@ -1010,16 +1065,16 @@ function RecorderPanel({
 
       <dl className="recorder-stats">
         <div className="stat-card">
-          <dt>Elapsed</dt>
+          <dt>{t("recorder.elapsed")}</dt>
           <dd className="timer-font">{formatDuration(status.recordingElapsedMs)}</dd>
         </div>
         <div className="stat-card">
-          <dt>Events captured</dt>
+          <dt>{t("recorder.eventsCaptured")}</dt>
           <dd>{status.recordingEventCount}</dd>
         </div>
         <div className="stat-card">
-          <dt>State</dt>
-          <dd>{stateLabel(status.state)}</dd>
+          <dt>{t("recorder.state")}</dt>
+          <dd>{stateLabel(status.state, i18n)}</dd>
         </div>
       </dl>
     </section>
@@ -1034,6 +1089,7 @@ type ScriptDetailProps = {
   detailDescription: string;
   shortcutDraft: string;
   busyAction: string | null;
+  i18n: I18n;
   onNameChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
   onReplayOptionsChange: (value: ReplayOptions) => void;
@@ -1053,6 +1109,7 @@ function ScriptDetail({
   detailDescription,
   shortcutDraft,
   busyAction,
+  i18n,
   onNameChange,
   onDescriptionChange,
   onReplayOptionsChange,
@@ -1063,18 +1120,20 @@ function ScriptDetail({
   onUnbindShortcut,
   onDelete,
 }: ScriptDetailProps) {
+  const { t } = i18n;
+
   return (
     <section className="detail-layout">
       <div className="panel detail-editor">
         <label className="form-label">
-          Script name
+          {t("recorder.scriptName")}
           <Input
             value={detailName}
             onChange={(event) => onNameChange(event.currentTarget.value)}
           />
         </label>
         <label className="form-label">
-          Description
+          {t("recorder.description")}
           <textarea
             value={detailDescription}
             onChange={(event) => onDescriptionChange(event.currentTarget.value)}
@@ -1089,15 +1148,15 @@ function ScriptDetail({
             disabled={busyAction === "save-detail"}
           >
             <Save aria-hidden="true" className="size-4" />
-            Save
+            {t("action.save")}
           </Button>
           <Button variant="outline" onClick={onReplay}>
             <Play aria-hidden="true" className="size-4" />
-            Replay
+            {t("action.replay")}
           </Button>
           <Button variant="destructive" onClick={onDelete}>
             <Trash2 aria-hidden="true" className="size-4" />
-            Delete
+            {t("action.delete")}
           </Button>
         </div>
       </div>
@@ -1105,10 +1164,10 @@ function ScriptDetail({
       <div className="panel side-panel">
         <h3>
           <SlidersHorizontal aria-hidden="true" className="section-icon" />
-          Replay Options
+          {t("detail.replayOptions")}
         </h3>
         <label className="form-label">
-          Speed
+          {t("detail.speed")}
           <Input
             type="number"
             min="0.1"
@@ -1123,7 +1182,7 @@ function ScriptDetail({
           />
         </label>
         <label className="form-label">
-          Countdown (ms)
+          {t("detail.countdownMs")}
           <Input
             type="number"
             min="0"
@@ -1149,7 +1208,7 @@ function ScriptDetail({
             }
             className="workspace-checkbox"
           />
-          <span>Original timing</span>
+          <span>{t("detail.originalTiming")}</span>
         </label>
         <label className="checkbox-row">
           <input
@@ -1163,30 +1222,59 @@ function ScriptDetail({
             }
             className="workspace-checkbox"
           />
-          <span>Skip mouse moves</span>
+          <span>{t("detail.skipMouseMoves")}</span>
+        </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={replayOptions.loopEnabled}
+            onChange={(event) =>
+              onReplayOptionsChange({
+                ...replayOptions,
+                loopEnabled: event.currentTarget.checked,
+              })
+            }
+            className="workspace-checkbox"
+          />
+          <span>{t("detail.loopReplay")}</span>
+        </label>
+        <label className="form-label">
+          {t("detail.loopIntervalMs")}
+          <Input
+            type="number"
+            min="0"
+            step="500"
+            value={replayOptions.loopIntervalMs}
+            onChange={(event) =>
+              onReplayOptionsChange({
+                ...replayOptions,
+                loopIntervalMs: Number(event.currentTarget.value),
+              })
+            }
+          />
         </label>
       </div>
 
       <div className="panel side-panel">
         <h3>
           <Keyboard aria-hidden="true" className="section-icon" />
-          Shortcut
+          {t("detail.shortcut")}
         </h3>
         <div className="shortcut-box">
-          <p className="eyebrow">Current Binding</p>
+          <p className="eyebrow">{t("detail.currentBinding")}</p>
           <p className="current-shortcut">
-            {shortcut?.accelerator ?? "No shortcut assigned"}
+            {shortcut?.accelerator ?? t("detail.noShortcutAssigned")}
           </p>
         </div>
         <Input
           value={shortcutDraft}
           onChange={(event) => onShortcutDraftChange(event.currentTarget.value)}
-          placeholder="e.g. CommandOrControl+Alt+1"
+          placeholder={t("detail.shortcutPlaceholder")}
         />
         <div className="button-row">
           <Button variant="default" onClick={() => void onBindShortcut()} className="flex-1">
             <Save aria-hidden="true" className="size-4" />
-            Assign
+            {t("action.assign")}
           </Button>
           <Button
             variant="destructive"
@@ -1195,7 +1283,7 @@ function ScriptDetail({
             className="flex-1"
           >
             <Trash2 aria-hidden="true" className="size-4" />
-            Remove
+            {t("action.remove")}
           </Button>
         </div>
       </div>
@@ -1204,19 +1292,23 @@ function ScriptDetail({
         <div className="card-heading-row">
           <h3>
             <Database aria-hidden="true" className="section-icon" />
-            Event Timeline
+            {t("detail.eventTimeline")}
           </h3>
-          <span className="badge">{script.eventCount} events</span>
+          <span className="badge">
+            {t("detail.eventCount", { count: script.eventCount })}
+          </span>
         </div>
-        <EventTimeline events={script.events} />
+        <EventTimeline events={script.events} i18n={i18n} />
       </div>
     </section>
   );
 }
 
-function EventTimeline({ events }: { events: ScriptEvent[] }) {
+function EventTimeline({ events, i18n }: { events: ScriptEvent[]; i18n: I18n }) {
+  const { t } = i18n;
+
   if (events.length === 0) {
-    return <p className="muted-text text-center py-6">No events captured.</p>;
+    return <p className="muted-text text-center py-6">{t("timeline.empty")}</p>;
   }
 
   const getEventIcon = (kind: string) => {
@@ -1241,10 +1333,10 @@ function EventTimeline({ events }: { events: ScriptEvent[] }) {
   return (
     <div className="timeline-table">
       <div className="timeline-header">
-        <span>Time</span>
-        <span>Type</span>
-        <span>Input</span>
-        <span>Position</span>
+        <span>{t("timeline.time")}</span>
+        <span>{t("timeline.type")}</span>
+        <span>{t("timeline.input")}</span>
+        <span>{t("timeline.position")}</span>
       </div>
       <div className="timeline-body">
         {events.slice(0, 500).map((event) => (
@@ -1252,7 +1344,7 @@ function EventTimeline({ events }: { events: ScriptEvent[] }) {
             <span className="timer-font">{formatDuration(event.timestampMs)}</span>
             <span className="event-type-cell">
               {getEventIcon(event.kind)}
-              <span className="capitalize">{eventKindLabel(event.kind)}</span>
+              <span className="capitalize">{eventKindLabel(event.kind, i18n)}</span>
             </span>
             <span className="font-mono text-xs">{eventInput(event)}</span>
             <span className="font-mono text-xs text-muted-foreground">{eventPosition(event)}</span>
@@ -1270,6 +1362,7 @@ type SettingsProps = {
   importPayload: string;
   busyAction: string | null;
   updaterStatus: UpdaterStatus;
+  i18n: I18n;
   onSettingsChange: (settings: AppSettings) => void;
   onSaveSettings: () => Promise<void>;
   onExportScripts: () => Promise<void>;
@@ -1287,6 +1380,7 @@ function Settings({
   importPayload,
   busyAction,
   updaterStatus,
+  i18n,
   onSettingsChange,
   onSaveSettings,
   onExportScripts,
@@ -1296,15 +1390,17 @@ function Settings({
   onCheckForUpdates,
   onInstallUpdate,
 }: SettingsProps) {
+  const { t } = i18n;
+
   return (
     <section className="settings-grid">
       <div className="panel settings-panel">
         <h3>
           <SlidersHorizontal aria-hidden="true" className="section-icon" />
-          Replay Defaults
+          {t("settings.replayDefaults")}
         </h3>
         <label className="form-label">
-          Default speed
+          {t("settings.defaultSpeed")}
           <Input
             type="number"
             min="0.1"
@@ -1319,7 +1415,7 @@ function Settings({
           />
         </label>
         <label className="form-label">
-          Countdown (ms)
+          {t("settings.defaultCountdownMs")}
           <Input
             type="number"
             min="0"
@@ -1333,8 +1429,37 @@ function Settings({
             }
           />
         </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={settings.defaultLoopEnabled}
+            onChange={(event) =>
+              onSettingsChange({
+                ...settings,
+                defaultLoopEnabled: event.currentTarget.checked,
+              })
+            }
+            className="workspace-checkbox"
+          />
+          <span>{t("settings.loopByDefault")}</span>
+        </label>
         <label className="form-label">
-          Emergency stop shortcut
+          {t("settings.defaultLoopIntervalMs")}
+          <Input
+            type="number"
+            min="0"
+            step="500"
+            value={settings.defaultLoopIntervalMs}
+            onChange={(event) =>
+              onSettingsChange({
+                ...settings,
+                defaultLoopIntervalMs: Number(event.currentTarget.value),
+              })
+            }
+          />
+        </label>
+        <label className="form-label">
+          {t("settings.emergencyStopShortcut")}
           <Input
             value={settings.emergencyStopShortcut}
             onChange={(event) =>
@@ -1357,7 +1482,25 @@ function Settings({
             }
             className="workspace-checkbox"
           />
-          <span>Skip mouse moves by default</span>
+          <span>{t("settings.skipMouseMovesDefault")}</span>
+        </label>
+        <label className="form-label">
+          {t("settings.language")}
+          <select
+            value={settings.language}
+            onChange={(event) =>
+              onSettingsChange({
+                ...settings,
+                language: event.currentTarget.value,
+              })
+            }
+          >
+            {languageOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {t(option.labelKey)}
+              </option>
+            ))}
+          </select>
         </label>
         <Button
           variant="default"
@@ -1366,67 +1509,77 @@ function Settings({
           className="w-full sm:w-auto"
         >
           <Save aria-hidden="true" className="size-4" />
-          Save Settings
+          {t("settings.save")}
         </Button>
       </div>
 
       <div className="panel settings-panel">
         <h3>
           <MousePointer2 aria-hidden="true" className="section-icon" />
-          Recording
+          {t("settings.recording")}
         </h3>
-        <label className="checkbox-row">
-          <input
-            type="checkbox"
-            checked={settings.recordMouseMoves}
-            onChange={(event) =>
-              onSettingsChange({
-                ...settings,
-                recordMouseMoves: event.currentTarget.checked,
-              })
-            }
-            className="workspace-checkbox"
-          />
-          <span>Record mouse move events</span>
-        </label>
-        <p className="muted-text">
-          Mouse moves are sampled at most every 100ms when this is enabled.
-        </p>
+        <div className="settings-control-card">
+          <label className="checkbox-row settings-checkbox-row">
+            <input
+              type="checkbox"
+              checked={settings.recordMouseMoves}
+              onChange={(event) =>
+                onSettingsChange({
+                  ...settings,
+                  recordMouseMoves: event.currentTarget.checked,
+                })
+              }
+              className="workspace-checkbox"
+            />
+            <span>{t("settings.recordMouseMoves")}</span>
+          </label>
+          <p className="muted-text">{t("settings.recordMouseMovesHelp")}</p>
+        </div>
       </div>
 
       <div className="panel settings-panel">
         <h3>
           <MonitorCog aria-hidden="true" className="section-icon" />
-          Platform
+          {t("settings.platform")}
         </h3>
         <dl className="settings-list">
           <div>
-            <dt>OS</dt>
+            <dt>{t("settings.os")}</dt>
             <dd>{status.platform.os}</dd>
           </div>
           <div>
-            <dt>Linux session</dt>
-            <dd>{status.platform.linuxSession ?? "n/a"}</dd>
+            <dt>{t("settings.linuxSession")}</dt>
+            <dd>{status.platform.linuxSession ?? t("settings.na")}</dd>
           </div>
           <div>
-            <dt>Replay</dt>
-            <dd className="capitalize">{status.platform.replaySupported ? "supported" : "limited"}</dd>
+            <dt>{t("action.replay")}</dt>
+            <dd className="capitalize">
+              {status.platform.replaySupported
+                ? t("settings.supported")
+                : t("settings.limited")}
+            </dd>
           </div>
           <div>
-            <dt>Recording</dt>
-            <dd className="capitalize">{status.platform.recordingSupported ? "supported" : "limited"}</dd>
+            <dt>{t("settings.recording")}</dt>
+            <dd className="capitalize">
+              {status.platform.recordingSupported
+                ? t("settings.supported")
+                : t("settings.limited")}
+            </dd>
           </div>
           <div>
-            <dt>macOS Accessibility</dt>
+            <dt>{t("settings.macosAccessibility")}</dt>
             <dd className="capitalize">{status.permissions.macosAccessibility}</dd>
           </div>
           <div>
-            <dt>macOS Input Monitoring</dt>
+            <dt>{t("settings.macosInputMonitoring")}</dt>
             <dd className="capitalize">{status.permissions.macosInputMonitoring}</dd>
           </div>
           <div>
-            <dt>Data Directory</dt>
-            <dd className="text-xs break-all font-mono opacity-80">{status.dataDir || "pending"}</dd>
+            <dt>{t("settings.dataDirectory")}</dt>
+            <dd className="text-xs break-all font-mono opacity-80">
+              {status.dataDir || t("settings.pending")}
+            </dd>
           </div>
         </dl>
       </div>
@@ -1434,11 +1587,11 @@ function Settings({
       <div className="panel settings-panel">
         <h3>
           <Download aria-hidden="true" className="section-icon" />
-          Updates
+          {t("settings.updates")}
         </h3>
-        <p className="muted-text">{updaterStatusText(updaterStatus)}</p>
+        <p className="muted-text">{updaterStatusText(updaterStatus, i18n)}</p>
         {updaterStatus.state === "downloading" ? (
-          <UpdateProgress status={updaterStatus} />
+          <UpdateProgress status={updaterStatus} i18n={i18n} />
         ) : null}
         <div className="button-row">
           <Button
@@ -1451,12 +1604,12 @@ function Settings({
             }
           >
             <Download aria-hidden="true" className="size-4" />
-            Check for Updates
+            {t("action.checkForUpdates")}
           </Button>
           {updaterStatus.state === "available" ? (
             <Button variant="default" onClick={() => void onInstallUpdate()}>
               <Download aria-hidden="true" className="size-4" />
-              Install Update
+              {t("action.install")}
             </Button>
           ) : null}
         </div>
@@ -1465,39 +1618,39 @@ function Settings({
       <div className="panel settings-panel data-panel">
         <h3>
           <Database aria-hidden="true" className="section-icon" />
-          Data Backup & Reset
+          {t("settings.dataBackupReset")}
         </h3>
         <div className="button-row">
           <Button variant="outline" onClick={() => void onExportScripts()}>
             <Download aria-hidden="true" className="size-4" />
-            Export All Scripts
+            {t("settings.exportAllScripts")}
           </Button>
           <Button
             variant="destructive"
             onClick={() => void onDeleteAllScripts()}
           >
             <Trash2 aria-hidden="true" className="size-4" />
-            Delete All Scripts
+            {t("settings.deleteAllScripts")}
           </Button>
         </div>
         <div className="data-box-group">
           <label className="form-label">
-            Export Payload
+            {t("settings.exportPayload")}
             <textarea
               className="payload-box workspace-textarea"
               value={exportPayload}
               readOnly
-              placeholder="Exported JSON will appear here after clicking Export All."
+              placeholder={t("settings.exportPlaceholder")}
               rows={6}
             />
           </label>
           <label className="form-label">
-            Import Payload
+            {t("settings.importPayload")}
             <textarea
               className="payload-box workspace-textarea"
               value={importPayload}
               onChange={(event) => onImportPayloadChange(event.currentTarget.value)}
-              placeholder="Paste exported JSON here to import scripts."
+              placeholder={t("settings.importPlaceholder")}
               rows={6}
             />
           </label>
@@ -1509,7 +1662,7 @@ function Settings({
           className="w-full sm:w-auto"
         >
           <Upload aria-hidden="true" className="size-4" />
-          Import Scripts
+          {t("settings.importScripts")}
         </Button>
       </div>
     </section>
@@ -1520,17 +1673,20 @@ function StatusBanners({
   status,
   notice,
   updaterStatus,
+  i18n,
   onInstallUpdate,
 }: {
   status: AppStatus;
   notice: Notice | null;
   updaterStatus: UpdaterStatus;
+  i18n: I18n;
   onInstallUpdate: () => Promise<void>;
 }) {
+  const { t } = i18n;
   const platformWarning =
     status.platform.waylandNote ||
     (status.platform.os === "macos"
-      ? "macOS may require Accessibility and Input Monitoring permission before capture or replay works."
+      ? t("status.platformMac")
       : null);
 
   const getNoticeIcon = (tone: Notice["tone"]) => {
@@ -1559,16 +1715,20 @@ function StatusBanners({
       {status.state === "replaying" ? (
         <div className="status-banner info">
           <Info className="size-4 shrink-0 text-sky-500" />
-          <span>Replay active. Emergency stop: {status.emergencyStopShortcut}</span>
+          <span>
+            {t("status.replayActive", {
+              shortcut: status.emergencyStopShortcut,
+            })}
+          </span>
         </div>
       ) : null}
       {updaterStatus.state !== "idle" ? (
         <div className={`status-banner ${updaterBannerTone(updaterStatus)}`}>
           <Download className="size-4 shrink-0" />
           <div className="status-banner-content">
-            <span>{updaterStatusText(updaterStatus)}</span>
+            <span>{updaterStatusText(updaterStatus, i18n)}</span>
             {updaterStatus.state === "downloading" ? (
-              <UpdateProgress status={updaterStatus} />
+              <UpdateProgress status={updaterStatus} i18n={i18n} />
             ) : null}
           </div>
           {updaterStatus.state === "available" ? (
@@ -1577,7 +1737,7 @@ function StatusBanners({
               onClick={() => void onInstallUpdate()}
               className="status-banner-action"
             >
-              Install
+              {t("action.install")}
             </Button>
           ) : null}
         </div>
@@ -1608,43 +1768,48 @@ function updaterBannerTone(status: UpdaterStatus): Notice["tone"] {
   return "info";
 }
 
-function updaterStatusText(status: UpdaterStatus) {
+function updaterStatusText(status: UpdaterStatus, i18n: I18n) {
+  const { t } = i18n;
+
   switch (status.state) {
     case "checking":
-      return "Checking GitHub Releases for updates.";
+      return t("update.checking");
     case "available":
-      return `Update ${status.version} is available.`;
+      return t("update.available", { version: status.version ?? "" });
     case "downloading": {
       const total = status.totalBytes ? ` of ${formatBytes(status.totalBytes)}` : "";
-      return `Downloading update${status.version ? ` ${status.version}` : ""}: ${formatBytes(
-        status.downloadedBytes ?? 0,
-      )}${total}.`;
+      return t("update.downloading", {
+        version: status.version ?? "",
+        downloaded: formatBytes(status.downloadedBytes ?? 0),
+        total,
+      });
     }
     case "installing":
-      return status.message ?? "Installing update. TIA Operator will restart when it is ready.";
+      return status.message ?? t("update.installing");
     case "upToDate":
-      return status.message ?? "TIA Operator is up to date.";
+      return status.message ?? t("update.upToDate");
     case "error":
-      return status.message ?? "Update check failed.";
+      return status.message ?? t("update.error");
     case "idle":
     default:
-      return "TIA Operator checks GitHub Releases for signed updates.";
+      return t("update.idle");
   }
 }
 
-function UpdateProgress({ status }: { status: UpdaterStatus }) {
+function UpdateProgress({ status, i18n }: { status: UpdaterStatus; i18n: I18n }) {
+  const { t } = i18n;
   const progress =
     status.totalBytes && status.totalBytes > 0
       ? Math.min(100, Math.round(((status.downloadedBytes ?? 0) / status.totalBytes) * 100))
       : null;
 
   return (
-    <div className="update-progress" aria-label="Update download progress">
+    <div className="update-progress" aria-label={t("status.downloading")}>
       <div
         className="update-progress-bar"
         style={{ width: `${progress ?? 18}%` }}
       />
-      <span>{progress === null ? "Downloading" : `${progress}%`}</span>
+      <span>{progress === null ? t("status.downloading") : `${progress}%`}</span>
     </div>
   );
 }
@@ -1687,27 +1852,27 @@ function createDemoEvents(): ScriptEvent[] {
   ];
 }
 
-function stateLabel(state: AppStatus["state"]) {
+function stateLabel(state: AppStatus["state"], i18n: I18n) {
   const labels: Record<AppStatus["state"], string> = {
-    idle: "Idle",
-    recording: "Recording",
-    recordingPaused: "Paused",
-    replaying: "Replaying",
-    error: "Error",
+    idle: i18n.t("state.idle"),
+    recording: i18n.t("state.recording"),
+    recordingPaused: i18n.t("state.recordingPaused"),
+    replaying: i18n.t("state.replaying"),
+    error: i18n.t("state.error"),
   };
   return labels[state];
 }
 
-function viewTitle(view: View, script: Script | null) {
+function viewTitle(view: View, script: Script | null, i18n: I18n) {
   if (view === "detail" && script) {
     return script.name;
   }
 
   const titles: Record<View, string> = {
-    dashboard: "Scripts",
-    recorder: "Recorder",
-    detail: "Script Detail",
-    settings: "Settings",
+    dashboard: i18n.t("view.scripts"),
+    recorder: i18n.t("view.recorder"),
+    detail: i18n.t("view.detail"),
+    settings: i18n.t("view.settings"),
   };
   return titles[view];
 }
@@ -1723,19 +1888,28 @@ function formatDuration(ms: number) {
   return `${minutes}:${rest.toString().padStart(2, "0")}`;
 }
 
-function formatDate(value: string) {
+function formatDate(value: string, i18n: I18n) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
-    return "n/a";
+    return i18n.t("settings.na");
   }
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(i18n.locale, {
     month: "short",
     day: "numeric",
   });
 }
 
-function eventKindLabel(kind: EventKind) {
-  return kind.replace(/_/g, " ");
+function eventKindLabel(kind: EventKind, i18n: I18n) {
+  const labels: Record<EventKind, string> = {
+    mouse_move: i18n.t("event.mouse_move"),
+    mouse_down: i18n.t("event.mouse_down"),
+    mouse_up: i18n.t("event.mouse_up"),
+    mouse_scroll: i18n.t("event.mouse_scroll"),
+    key_down: i18n.t("event.key_down"),
+    key_up: i18n.t("event.key_up"),
+    text: i18n.t("event.text"),
+  };
+  return labels[kind];
 }
 
 function eventInput(event: ScriptEvent) {

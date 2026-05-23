@@ -94,6 +94,10 @@ pub struct ReplayOptions {
     pub countdown_ms: u64,
     pub use_original_timing: bool,
     pub skip_mouse_moves: bool,
+    #[serde(default)]
+    pub loop_enabled: bool,
+    #[serde(default = "default_loop_interval_ms")]
+    pub loop_interval_ms: u64,
     pub fail_if_window_changed: Option<bool>,
 }
 
@@ -104,6 +108,8 @@ impl Default for ReplayOptions {
             countdown_ms: 3000,
             use_original_timing: true,
             skip_mouse_moves: false,
+            loop_enabled: false,
+            loop_interval_ms: default_loop_interval_ms(),
             fail_if_window_changed: None,
         }
     }
@@ -130,11 +136,18 @@ impl Default for RecorderState {
 pub struct AppSettings {
     pub default_replay_speed: f64,
     pub default_countdown_ms: u64,
+    #[serde(default)]
+    pub default_loop_enabled: bool,
+    #[serde(default = "default_loop_interval_ms")]
+    pub default_loop_interval_ms: u64,
     pub emergency_stop_shortcut: String,
     pub skip_mouse_move_noise: bool,
     #[serde(default)]
     pub record_mouse_moves: bool,
+    #[serde(default = "default_show_replay_overlay")]
     pub show_replay_overlay: bool,
+    #[serde(default = "default_language")]
+    pub language: String,
 }
 
 impl Default for AppSettings {
@@ -142,12 +155,27 @@ impl Default for AppSettings {
         Self {
             default_replay_speed: 1.0,
             default_countdown_ms: 3000,
+            default_loop_enabled: false,
+            default_loop_interval_ms: default_loop_interval_ms(),
             emergency_stop_shortcut: "CommandOrControl+Alt+Escape".to_string(),
             skip_mouse_move_noise: false,
             record_mouse_moves: false,
             show_replay_overlay: true,
+            language: default_language(),
         }
     }
+}
+
+fn default_loop_interval_ms() -> u64 {
+    1000
+}
+
+fn default_language() -> String {
+    "system".to_string()
+}
+
+fn default_show_replay_overlay() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
