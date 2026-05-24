@@ -80,6 +80,7 @@ impl InputReplayer for EnigoReplayer {
                     enigo.text(text).map_err(replay_error)?;
                 }
             }
+            EventKind::Wait => {}
         }
 
         Ok(())

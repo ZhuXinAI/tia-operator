@@ -12,8 +12,8 @@ use uuid::Uuid;
 use crate::{
     errors::{AppError, AppResult},
     models::{
-        AppSettings, CreateScriptInput, Script, ScriptEvent, ScriptSummary, ShortcutBinding,
-        UpdateScriptInput,
+        normalize_script_events, script_duration_ms, AppSettings, CreateScriptInput, Script,
+        ScriptEvent, ScriptSummary, ShortcutBinding, UpdateScriptInput,
     },
 };
 
@@ -128,7 +128,7 @@ impl Database {
             return Err(AppError::invalid("script name is required"));
         }
 
-        let events = input.events.unwrap_or_default();
+        let events = normalize_script_events(input.events.unwrap_or_default());
         let duration_ms = calculate_duration(&events);
         let event_count = events.len() as u64;
         let events_json = serde_json::to_string(&events)?;
@@ -166,7 +166,7 @@ impl Database {
         }
 
         let description = input.description.or(existing.description);
-        let events = input.events.unwrap_or(existing.events);
+        let events = normalize_script_events(input.events.unwrap_or(existing.events));
         let duration_ms = calculate_duration(&events);
         let event_count = events.len() as u64;
         let events_json = serde_json::to_string(&events)?;
@@ -358,7 +358,11 @@ impl Database {
 
 fn row_to_script(row: &rusqlite::Row<'_>) -> rusqlite::Result<Script> {
     let events_json: String = row.get(3)?;
-    let events = serde_json::from_str::<Vec<ScriptEvent>>(&events_json).unwrap_or_default();
+    let events = normalize_script_events(
+        serde_json::from_str::<Vec<ScriptEvent>>(&events_json).unwrap_or_default(),
+    );
+    let duration_ms = calculate_duration(&events);
+    let event_count = events.len() as u64;
     Ok(Script {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -366,8 +370,8 @@ fn row_to_script(row: &rusqlite::Row<'_>) -> rusqlite::Result<Script> {
         events,
         created_at: row.get(4)?,
         updated_at: row.get(5)?,
-        duration_ms: int_to_u64(row.get::<_, i64>(6)?),
-        event_count: int_to_u64(row.get::<_, i64>(7)?),
+        duration_ms,
+        event_count,
     })
 }
 
@@ -383,11 +387,7 @@ fn row_to_shortcut(row: &rusqlite::Row<'_>) -> rusqlite::Result<ShortcutBinding>
 }
 
 fn calculate_duration(events: &[ScriptEvent]) -> u64 {
-    events
-        .iter()
-        .map(|event| event.timestamp_ms)
-        .max()
-        .unwrap_or(0)
+    script_duration_ms(events)
 }
 
 fn int_to_u64(value: i64) -> u64 {

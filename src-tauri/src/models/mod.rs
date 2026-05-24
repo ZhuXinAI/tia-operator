@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,6 +32,7 @@ pub struct ScriptSummary {
 #[serde(rename_all = "camelCase")]
 pub struct ScriptEvent {
     pub id: String,
+    #[serde(default)]
     pub timestamp_ms: u64,
     pub kind: EventKind,
     pub x: Option<i32>,
@@ -39,6 +41,8 @@ pub struct ScriptEvent {
     pub key: Option<String>,
     pub modifiers: Option<Modifiers>,
     pub text: Option<String>,
+    #[serde(default)]
+    pub wait_ms: Option<u64>,
     pub scroll_delta_x: Option<i32>,
     pub scroll_delta_y: Option<i32>,
     pub metadata: Option<Value>,
@@ -54,6 +58,7 @@ pub enum EventKind {
     KeyDown,
     KeyUp,
     Text,
+    Wait,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -257,4 +262,79 @@ pub struct AppStatus {
     pub permissions: PermissionStatus,
     pub emergency_stop_shortcut: String,
     pub data_dir: String,
+}
+
+pub fn normalize_script_events(events: Vec<ScriptEvent>) -> Vec<ScriptEvent> {
+    if events.iter().any(|event| event.kind == EventKind::Wait) {
+        return events.into_iter().map(normalize_explicit_event).collect();
+    }
+
+    let mut normalized = Vec::with_capacity(events.len());
+    let mut previous_timestamp = 0;
+
+    for mut event in events {
+        let delay = event.timestamp_ms.saturating_sub(previous_timestamp);
+        if delay > 0 {
+            normalized.push(create_wait_event(delay));
+        }
+
+        previous_timestamp = event.timestamp_ms;
+        event.timestamp_ms = 0;
+        event.wait_ms = None;
+        normalized.push(event);
+    }
+
+    normalized
+}
+
+pub fn script_duration_ms(events: &[ScriptEvent]) -> u64 {
+    if events.iter().any(|event| event.kind == EventKind::Wait) {
+        return events
+            .iter()
+            .filter_map(|event| {
+                if event.kind == EventKind::Wait {
+                    event.wait_ms
+                } else {
+                    None
+                }
+            })
+            .sum();
+    }
+
+    events
+        .iter()
+        .map(|event| event.timestamp_ms)
+        .max()
+        .unwrap_or(0)
+}
+
+fn normalize_explicit_event(mut event: ScriptEvent) -> ScriptEvent {
+    if event.kind == EventKind::Wait {
+        event.wait_ms = Some(event.wait_ms.unwrap_or(event.timestamp_ms));
+    } else {
+        event.wait_ms = None;
+    }
+
+    event.timestamp_ms = 0;
+    event
+}
+
+fn create_wait_event(wait_ms: u64) -> ScriptEvent {
+    ScriptEvent {
+        id: Uuid::new_v4().to_string(),
+        timestamp_ms: 0,
+        kind: EventKind::Wait,
+        x: None,
+        y: None,
+        button: None,
+        key: None,
+        modifiers: None,
+        text: None,
+        wait_ms: Some(wait_ms),
+        scroll_delta_x: None,
+        scroll_delta_y: None,
+        metadata: Some(serde_json::json!({
+            "source": "timing"
+        })),
+    }
 }

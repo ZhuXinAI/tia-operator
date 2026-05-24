@@ -137,6 +137,7 @@ fn normalize_event(event: Event, timestamp_ms: u64, modifiers: Modifiers) -> Opt
         key: None,
         modifiers: Some(modifiers.clone()),
         text: None,
+        wait_ms: None,
         scroll_delta_x: None,
         scroll_delta_y: None,
         metadata: Some(json!({

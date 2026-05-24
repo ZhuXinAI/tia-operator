@@ -61,7 +61,7 @@ const en = {
   "detail.replayOptions": "Replay Options",
   "detail.speed": "Speed",
   "detail.countdownMs": "Countdown (ms)",
-  "detail.originalTiming": "Original timing",
+  "detail.originalTiming": "Honor wait steps",
   "detail.skipMouseMoves": "Skip mouse moves",
   "detail.loopReplay": "Loop replay",
   "detail.loopIntervalMs": "Loop interval (ms)",
@@ -69,6 +69,11 @@ const en = {
   "detail.currentBinding": "Current Binding",
   "detail.noShortcutAssigned": "No shortcut assigned",
   "detail.shortcutPlaceholder": "e.g. CommandOrControl+Alt+1",
+  "detail.shortcutCaptureIdle": "Press shortcut keys",
+  "detail.shortcutCaptureActive": "Listening for keys...",
+  "detail.shortcutCaptureHelp": "Use one modifier plus one key, such as Ctrl+R or Alt+1.",
+  "detail.shortcutCaptureWaiting": "Hold one modifier, then press another key.",
+  "detail.shortcutCaptureOneModifier": "Use only one modifier key.",
   "detail.eventTimeline": "Event Timeline",
   "detail.eventCount": "{count} events",
   "timeline.empty": "No events captured.",
@@ -87,6 +92,7 @@ const en = {
   "timeline.y": "Y position",
   "timeline.deltaX": "Horizontal scroll delta",
   "timeline.deltaY": "Vertical scroll delta",
+  "timeline.waitMs": "Wait duration",
   "settings.replayDefaults": "Replay Defaults",
   "settings.defaultSpeed": "Default speed",
   "settings.defaultCountdownMs": "Countdown (ms)",
@@ -174,6 +180,7 @@ const en = {
   "event.key_down": "key down",
   "event.key_up": "key up",
   "event.text": "text",
+  "event.wait": "wait",
 } as const;
 
 type MessageKey = keyof typeof en;
@@ -241,7 +248,7 @@ const zh: Record<MessageKey, string> = {
   "detail.replayOptions": "回放选项",
   "detail.speed": "速度",
   "detail.countdownMs": "倒计时（毫秒）",
-  "detail.originalTiming": "使用原始节奏",
+  "detail.originalTiming": "执行等待步骤",
   "detail.skipMouseMoves": "跳过鼠标移动",
   "detail.loopReplay": "循环回放",
   "detail.loopIntervalMs": "循环间隔（毫秒）",
@@ -249,6 +256,11 @@ const zh: Record<MessageKey, string> = {
   "detail.currentBinding": "当前绑定",
   "detail.noShortcutAssigned": "未分配快捷键",
   "detail.shortcutPlaceholder": "例如 CommandOrControl+Alt+1",
+  "detail.shortcutCaptureIdle": "按下快捷键",
+  "detail.shortcutCaptureActive": "正在监听按键...",
+  "detail.shortcutCaptureHelp": "使用一个修饰键加一个按键，例如 Ctrl+R 或 Alt+1。",
+  "detail.shortcutCaptureWaiting": "按住一个修饰键，然后再按一个键。",
+  "detail.shortcutCaptureOneModifier": "只能使用一个修饰键。",
   "detail.eventTimeline": "事件时间线",
   "detail.eventCount": "{count} 个事件",
   "timeline.empty": "没有捕获事件。",
@@ -267,6 +279,7 @@ const zh: Record<MessageKey, string> = {
   "timeline.y": "Y 坐标",
   "timeline.deltaX": "水平滚动增量",
   "timeline.deltaY": "垂直滚动增量",
+  "timeline.waitMs": "等待时长",
   "settings.replayDefaults": "回放默认值",
   "settings.defaultSpeed": "默认速度",
   "settings.defaultCountdownMs": "倒计时（毫秒）",
@@ -351,6 +364,7 @@ const zh: Record<MessageKey, string> = {
   "event.key_down": "按键按下",
   "event.key_up": "按键松开",
   "event.text": "文本",
+  "event.wait": "等待",
 };
 
 export const languageOptions = [

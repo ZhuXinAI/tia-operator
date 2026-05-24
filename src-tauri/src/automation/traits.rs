@@ -56,23 +56,25 @@ pub trait InputReplayer: Send + Sync {
         stop_token: StopToken,
     ) -> AppResult<()> {
         let speed = options.speed_multiplier.max(0.1);
-        let mut previous_ts = 0;
-
         for event in events {
             if stop_token.is_stopped() {
                 break;
             }
 
-            if options.use_original_timing {
-                let delay = event.timestamp_ms.saturating_sub(previous_ts);
-                let adjusted_delay = (delay as f64 / speed).round() as u64;
+            if event.kind == crate::models::EventKind::Wait {
+                let delay = event.wait_ms.unwrap_or(event.timestamp_ms);
+                let adjusted_delay = if options.use_original_timing {
+                    (delay as f64 / speed).round() as u64
+                } else {
+                    0
+                };
                 if adjusted_delay > 0 {
                     std::thread::sleep(std::time::Duration::from_millis(adjusted_delay));
                 }
+                continue;
             }
 
             self.replay_event(&event)?;
-            previous_ts = event.timestamp_ms;
         }
 
         Ok(())

@@ -1,6 +1,6 @@
 [package]
 name = "tia-operator"
-version = "0.1.4"
+version = "0.1.5"
 description = "A local-first desktop input recorder and replayer"
 authors = ["Buildmind AI"]
 edition = "2021"

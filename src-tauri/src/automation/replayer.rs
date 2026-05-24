@@ -76,21 +76,33 @@ impl ReplayService {
                 }
 
                 loop_index += 1;
-                let mut previous_ts = 0;
-
                 for (index, event) in events.iter().enumerate() {
                     if token.is_stopped() {
                         break;
                     }
 
-                    if options.use_original_timing {
-                        let delay = event.timestamp_ms.saturating_sub(previous_ts);
-                        let adjusted_delay = (delay as f64 / speed).round() as u64;
+                    if event.kind == EventKind::Wait {
+                        let delay = event.wait_ms.unwrap_or(event.timestamp_ms);
+                        let adjusted_delay = if options.use_original_timing {
+                            (delay as f64 / speed).round() as u64
+                        } else {
+                            0
+                        };
                         wait_countdown(&token, adjusted_delay);
-                    }
+                        if token.is_stopped() {
+                            break;
+                        }
 
-                    if token.is_stopped() {
-                        break;
+                        let _ = app.emit(
+                            "replay:progress",
+                            json!({
+                                "scriptId": script.id,
+                                "index": index + 1,
+                                "total": total,
+                                "loopIndex": loop_index
+                            }),
+                        );
+                        continue;
                     }
 
                     if let Err(error) = backend.replay_event(event) {
@@ -98,7 +110,6 @@ impl ReplayService {
                         break;
                     }
 
-                    previous_ts = event.timestamp_ms;
                     let _ = app.emit(
                         "replay:progress",
                         json!({

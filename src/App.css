@@ -901,6 +901,47 @@ label {
   overflow-wrap: anywhere;
 }
 
+.shortcut-capture {
+  display: grid;
+  gap: 8px;
+}
+
+.shortcut-capture-button {
+  min-height: 44px;
+  width: 100%;
+  border: 1px dashed color-mix(in oklch, var(--primary) 45%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--primary) 5%, var(--card));
+  color: var(--foreground);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.shortcut-capture-button.listening {
+  border-style: solid;
+  background: color-mix(in oklch, var(--primary) 12%, var(--card));
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 12%, transparent);
+}
+
+.shortcut-capture-help {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.shortcut-capture-help.error {
+  color: var(--destructive);
+}
+
 .checkbox-row {
   display: flex;
   align-items: flex-start;
@@ -957,8 +998,8 @@ label {
 
 .timeline-header {
   display: grid;
-  grid-template-columns: 80px 140px minmax(160px, 1fr) 120px;
-  min-width: 560px;
+  grid-template-columns: 140px minmax(180px, 1fr) 120px;
+  min-width: 460px;
   background: var(--muted);
   color: var(--muted-foreground);
   font-size: 11px;
@@ -999,16 +1040,16 @@ label {
 
 .timeline-row {
   display: grid;
-  grid-template-columns: 80px 140px minmax(160px, 1fr) 120px;
-  min-width: 560px;
+  grid-template-columns: 140px minmax(180px, 1fr) 120px;
+  min-width: 460px;
   border-bottom: 1px solid var(--border);
   transition: background 100ms ease;
 }
 
 .timeline-table.editable .timeline-header,
 .timeline-table.editable .timeline-row {
-  grid-template-columns: 42px 104px minmax(150px, 0.9fr) minmax(190px, 1.15fr) minmax(210px, 1fr) 128px;
-  min-width: 840px;
+  grid-template-columns: 42px 160px minmax(220px, 1.1fr) minmax(210px, 1fr) 128px;
+  min-width: 760px;
 }
 
 .timeline-row:last-child {

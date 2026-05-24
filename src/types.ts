@@ -12,7 +12,8 @@ export type EventKind =
   | "mouse_scroll"
   | "key_down"
   | "key_up"
-  | "text";
+  | "text"
+  | "wait";
 
 export type MouseButton =
   | "left"
@@ -39,6 +40,7 @@ export type ScriptEvent = {
   key?: string | null;
   modifiers?: Modifiers | null;
   text?: string | null;
+  waitMs?: number | null;
   scrollDeltaX?: number | null;
   scrollDeltaY?: number | null;
   metadata?: unknown;

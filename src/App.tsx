@@ -170,7 +170,7 @@ function App() {
   const [detailName, setDetailName] = useState("");
   const [detailDescription, setDetailDescription] = useState("");
   const [detailEvents, setDetailEvents] = useState<ScriptEvent[]>([]);
-  const [shortcutDraft, setShortcutDraft] = useState("CommandOrControl+Alt+1");
+  const [shortcutDraft, setShortcutDraft] = useState("");
   const [replayOptions, setReplayOptions] =
     useState<ReplayOptions>(defaultReplayOptions);
   const [exportPayload, setExportPayload] = useState("");
@@ -405,7 +405,7 @@ function App() {
       const binding = shortcuts.find(
         (shortcut) => shortcut.scriptId === selectedScript.id,
       );
-      setShortcutDraft(binding?.accelerator ?? "CommandOrControl+Alt+1");
+      setShortcutDraft(binding?.accelerator ?? "");
     }
   }, [selectedScript, shortcuts]);
 
@@ -1307,16 +1307,23 @@ function ScriptDetail({
         <div className="shortcut-box">
           <p className="eyebrow">{t("detail.currentBinding")}</p>
           <p className="current-shortcut">
-            {shortcut?.accelerator ?? t("detail.noShortcutAssigned")}
+            {shortcut?.accelerator
+              ? formatShortcutDisplay(shortcut.accelerator)
+              : t("detail.noShortcutAssigned")}
           </p>
         </div>
-        <Input
+        <ShortcutCaptureField
           value={shortcutDraft}
-          onChange={(event) => onShortcutDraftChange(event.currentTarget.value)}
-          placeholder={t("detail.shortcutPlaceholder")}
+          i18n={i18n}
+          onChange={onShortcutDraftChange}
         />
         <div className="button-row">
-          <Button variant="default" onClick={() => void onBindShortcut()} className="flex-1">
+          <Button
+            variant="default"
+            onClick={() => void onBindShortcut()}
+            disabled={!shortcutDraft}
+            className="flex-1"
+          >
             <Save aria-hidden="true" className="size-4" />
             {t("action.assign")}
           </Button>
@@ -1352,6 +1359,80 @@ function ScriptDetail({
   );
 }
 
+function ShortcutCaptureField({
+  value,
+  i18n,
+  onChange,
+}: {
+  value: string;
+  i18n: I18n;
+  onChange: (value: string) => void;
+}) {
+  const { t } = i18n;
+  const [capturing, setCapturing] = useState(false);
+  const [captureError, setCaptureError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!capturing) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (event.key === "Escape") {
+        setCapturing(false);
+        setCaptureError(null);
+        return;
+      }
+
+      const nextShortcut = shortcutFromKeyboardEvent(event);
+      if (!nextShortcut) {
+        setCaptureError(t("detail.shortcutCaptureWaiting"));
+        return;
+      }
+
+      if (nextShortcut === "multiple-modifiers") {
+        setCaptureError(t("detail.shortcutCaptureOneModifier"));
+        return;
+      }
+
+      onChange(nextShortcut);
+      setCaptureError(null);
+      setCapturing(false);
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [capturing, onChange, t]);
+
+  return (
+    <div className="shortcut-capture">
+      <button
+        type="button"
+        className={capturing ? "shortcut-capture-button listening" : "shortcut-capture-button"}
+        onClick={() => {
+          setCapturing(true);
+          setCaptureError(null);
+        }}
+      >
+        <Keyboard aria-hidden="true" className="size-4" />
+        <span>
+          {capturing
+            ? t("detail.shortcutCaptureActive")
+            : value
+              ? formatShortcutDisplay(value)
+              : t("detail.shortcutCaptureIdle")}
+        </span>
+      </button>
+      <p className={captureError ? "shortcut-capture-help error" : "shortcut-capture-help"}>
+        {captureError ?? t("detail.shortcutCaptureHelp")}
+      </p>
+    </div>
+  );
+}
+
 function EventTimeline({
   events,
   i18n,
@@ -1381,11 +1462,9 @@ function EventTimeline({
   };
 
   const addStep = () => {
-    const lastEvent = events[events.length - 1];
-    const startTimestamp = (lastEvent?.timestampMs ?? 0) + 250;
     onEventsChange?.([
       ...events,
-      ...createEventsFromTemplate(stepTemplate, startTimestamp),
+      ...createEventsFromTemplate(stepTemplate),
     ]);
   };
 
@@ -1429,6 +1508,8 @@ function EventTimeline({
         return <Keyboard className="size-3.5 text-purple-500" />;
       case "text":
         return <Keyboard className="size-3.5 text-emerald-500" />;
+      case "wait":
+        return <Pause className="size-3.5 text-amber-500" />;
       default:
         return <Database className="size-3.5 text-muted-foreground" />;
     }
@@ -1446,7 +1527,6 @@ function EventTimeline({
       ) : null}
       <div className="timeline-header">
         {editable ? <span aria-hidden="true" /> : null}
-        <span>{t("timeline.time")}</span>
         <span>{t("timeline.type")}</span>
         <span>{t("timeline.input")}</span>
         <span>{t("timeline.position")}</span>
@@ -1478,26 +1558,6 @@ function EventTimeline({
                 </button>
               </div>
             ) : null}
-            <div className="timeline-cell">
-              {editable ? (
-                <Input
-                  aria-label={t("timeline.time")}
-                  className="timeline-field mono-field"
-                  type="number"
-                  min="0"
-                  step="50"
-                  value={event.timestampMs}
-                  onChange={(changeEvent) =>
-                    updateEvent(index, {
-                      ...event,
-                      timestampMs: Number(changeEvent.currentTarget.value),
-                    })
-                  }
-                />
-              ) : (
-                <span className="timer-font">{formatDuration(event.timestampMs)}</span>
-              )}
-            </div>
             <div className="timeline-cell event-type-cell">
               {getEventIcon(event.kind)}
               {editable ? (
@@ -1671,6 +1731,22 @@ function EventInputEditor({
         placeholder="Text"
         onChange={(changeEvent) =>
           onChange({ ...event, text: changeEvent.currentTarget.value })
+        }
+      />
+    );
+  }
+
+  if (event.kind === "wait") {
+    return (
+      <Input
+        aria-label={t("timeline.waitMs")}
+        className="timeline-field mono-field"
+        type="number"
+        min="0"
+        step="50"
+        value={event.waitMs ?? 250}
+        onChange={(changeEvent) =>
+          onChange({ ...event, waitMs: Number(changeEvent.currentTarget.value) })
         }
       />
     );
@@ -2193,6 +2269,7 @@ function getErrorMessage(error: unknown) {
 type StepTemplate = "click" | EventKind;
 
 const eventKinds: EventKind[] = [
+  "wait",
   "mouse_down",
   "mouse_up",
   "mouse_move",
@@ -2204,6 +2281,7 @@ const eventKinds: EventKind[] = [
 
 const stepTemplates: StepTemplate[] = [
   "click",
+  "wait",
   "mouse_down",
   "mouse_up",
   "mouse_move",
@@ -2219,34 +2297,49 @@ function createDemoEvents(): ScriptEvent[] {
   return [
     {
       id: crypto.randomUUID(),
-      timestampMs: 300,
+      timestampMs: 0,
       kind: "text",
       text: "Hello from TIA Operator",
     },
     {
       id: crypto.randomUUID(),
-      timestampMs: 500,
+      timestampMs: 0,
+      kind: "wait",
+      waitMs: 200,
+    },
+    {
+      id: crypto.randomUUID(),
+      timestampMs: 0,
       kind: "key_down",
       key: "Return",
     },
     {
       id: crypto.randomUUID(),
-      timestampMs: 620,
+      timestampMs: 0,
+      kind: "wait",
+      waitMs: 120,
+    },
+    {
+      id: crypto.randomUUID(),
+      timestampMs: 0,
       kind: "key_up",
       key: "Return",
     },
   ];
 }
 
-function createEventsFromTemplate(template: StepTemplate, timestampMs: number): ScriptEvent[] {
+function createEventsFromTemplate(template: StepTemplate): ScriptEvent[] {
   if (template === "click") {
     return [
-      createDefaultEvent("mouse_down", timestampMs, {
+      createDefaultEvent("mouse_down", {
         button: "left",
         x: 0,
         y: 0,
       }),
-      createDefaultEvent("mouse_up", timestampMs + 80, {
+      createDefaultEvent("wait", {
+        waitMs: 80,
+      }),
+      createDefaultEvent("mouse_up", {
         button: "left",
         x: 0,
         y: 0,
@@ -2254,17 +2347,16 @@ function createEventsFromTemplate(template: StepTemplate, timestampMs: number): 
     ];
   }
 
-  return [createDefaultEvent(template, timestampMs)];
+  return [createDefaultEvent(template)];
 }
 
 function createDefaultEvent(
   kind: EventKind,
-  timestampMs: number,
   overrides: Partial<ScriptEvent> = {},
 ): ScriptEvent {
   const base: ScriptEvent = {
     id: crypto.randomUUID(),
-    timestampMs,
+    timestampMs: 0,
     kind,
   };
 
@@ -2274,10 +2366,17 @@ function createDefaultEvent(
 function convertEventKind(event: ScriptEvent, kind: EventKind): ScriptEvent {
   const base = {
     id: event.id,
-    timestampMs: event.timestampMs,
+    timestampMs: 0,
     kind,
     metadata: event.metadata,
   } satisfies Pick<ScriptEvent, "id" | "timestampMs" | "kind" | "metadata">;
+
+  if (kind === "wait") {
+    return {
+      ...base,
+      waitMs: event.waitMs ?? (event.timestampMs > 0 ? event.timestampMs : 250),
+    };
+  }
 
   if (kind === "mouse_down" || kind === "mouse_up") {
     return {
@@ -2328,24 +2427,10 @@ function moveTimelineEvent(events: ScriptEvent[], fromIndex: number, toIndex: nu
     return events;
   }
 
-  const eventsWithDelay = events.map((event, index) => ({
-    event,
-    delayMs:
-      index === 0
-        ? Math.max(0, event.timestampMs)
-        : Math.max(0, event.timestampMs - events[index - 1].timestampMs),
-  }));
-  const [moving] = eventsWithDelay.splice(fromIndex, 1);
-  eventsWithDelay.splice(toIndex, 0, moving);
-
-  let timestampMs = 0;
-  return eventsWithDelay.map(({ event, delayMs }) => {
-    timestampMs += delayMs;
-    return {
-      ...event,
-      timestampMs,
-    };
-  });
+  const nextEvents = [...events];
+  const [moving] = nextEvents.splice(fromIndex, 1);
+  nextEvents.splice(toIndex, 0, moving);
+  return nextEvents;
 }
 
 function stepTemplateLabel(template: StepTemplate, i18n: I18n) {
@@ -2354,6 +2439,73 @@ function stepTemplateLabel(template: StepTemplate, i18n: I18n) {
   }
 
   return eventKindLabel(template, i18n);
+}
+
+function shortcutFromKeyboardEvent(event: KeyboardEvent) {
+  if (isModifierCode(event.code)) {
+    return null;
+  }
+
+  const altGraph = event.getModifierState?.("AltGraph") || event.key === "AltGraph";
+  const modifiers = [
+    event.shiftKey ? "shift" : null,
+    event.ctrlKey && !altGraph ? "control" : null,
+    event.altKey || altGraph ? "alt" : null,
+    event.metaKey ? "super" : null,
+  ].filter(Boolean) as string[];
+
+  if (modifiers.length === 0) {
+    return null;
+  }
+
+  if (modifiers.length > 1) {
+    return "multiple-modifiers";
+  }
+
+  const key = shortcutKeyFromCode(event.code);
+  return key ? `${modifiers[0]}+${key}` : null;
+}
+
+function isModifierCode(code: string) {
+  return [
+    "AltLeft",
+    "AltRight",
+    "ControlLeft",
+    "ControlRight",
+    "MetaLeft",
+    "MetaRight",
+    "ShiftLeft",
+    "ShiftRight",
+  ].includes(code);
+}
+
+function shortcutKeyFromCode(code: string) {
+  if (!code || code === "Unidentified") {
+    return null;
+  }
+
+  return code;
+}
+
+function formatShortcutDisplay(shortcut: string) {
+  return shortcut
+    .split("+")
+    .map((part) => {
+      const normalized = part.trim();
+      const lower = normalized.toLowerCase();
+      if (lower === "control") return "Ctrl";
+      if (lower === "shift") return "Shift";
+      if (lower === "alt") return "Alt";
+      if (lower === "super") {
+        return navigator.platform.toLowerCase().includes("mac") ? "Cmd" : "Win";
+      }
+      if (normalized.startsWith("Key")) return normalized.slice(3).toUpperCase();
+      if (normalized.startsWith("Digit")) return normalized.slice(5);
+      if (normalized.startsWith("Numpad")) return `Num ${normalized.slice(6)}`;
+      if (normalized.startsWith("Arrow")) return normalized.replace("Arrow", "");
+      return normalized;
+    })
+    .join(" + ");
 }
 
 function stateLabel(state: AppStatus["state"], i18n: I18n) {
@@ -2412,15 +2564,24 @@ function eventKindLabel(kind: EventKind, i18n: I18n) {
     key_down: i18n.t("event.key_down"),
     key_up: i18n.t("event.key_up"),
     text: i18n.t("event.text"),
+    wait: i18n.t("event.wait"),
   };
   return labels[kind];
 }
 
 function eventInput(event: ScriptEvent) {
+  if (event.kind === "wait") {
+    return `${event.waitMs ?? 0} ms`;
+  }
+
   return event.text ?? event.key ?? event.button ?? "-";
 }
 
 function eventPosition(event: ScriptEvent) {
+  if (event.kind === "wait") {
+    return "-";
+  }
+
   if (typeof event.x === "number" && typeof event.y === "number") {
     return `${event.x}, ${event.y}`;
   }

@@ -1,6 +1,8 @@
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
+use tauri_plugin_global_shortcut::{
+    GlobalShortcutExt, Modifiers, Shortcut, ShortcutEvent, ShortcutState,
+};
 
 use crate::{
     errors::{AppError, AppResult},
@@ -25,14 +27,13 @@ pub fn handle_global_shortcut(app: &AppHandle, shortcut: &Shortcut, event: Short
             }
         };
 
-        let _ = app.emit(
-            "shortcut:triggered",
-            json!({
-                "accelerator": accelerator
-            }),
-        );
-
-        if accelerator == settings.emergency_stop_shortcut {
+        if shortcut_matches(&accelerator, &settings.emergency_stop_shortcut) {
+            let _ = app.emit(
+                "shortcut:triggered",
+                json!({
+                    "accelerator": accelerator
+                }),
+            );
             let _ = state.stop_replay(&app);
             return;
         }
@@ -44,25 +45,41 @@ pub fn handle_global_shortcut(app: &AppHandle, shortcut: &Shortcut, event: Short
             .get(&accelerator)
             .cloned();
 
-        if let Some(script_id) = script_id {
-            let options = ReplayOptions {
-                speed_multiplier: settings.default_replay_speed,
-                countdown_ms: settings.default_countdown_ms,
-                use_original_timing: true,
-                skip_mouse_moves: settings.skip_mouse_move_noise,
-                loop_enabled: settings.default_loop_enabled,
-                loop_interval_ms: settings.default_loop_interval_ms,
-                fail_if_window_changed: None,
-            };
+        let Some(script_id) = script_id else {
+            let _ = app.emit(
+                "shortcut:error",
+                json!({
+                    "message": "shortcut is not assigned to a script"
+                }),
+            );
+            return;
+        };
 
-            if let Err(error) = state.start_replay(app.clone(), script_id, options) {
-                let _ = app.emit(
-                    "shortcut:error",
-                    json!({
-                        "message": error.to_string()
-                    }),
-                );
-            }
+        let _ = app.emit(
+            "shortcut:triggered",
+            json!({
+                "accelerator": accelerator,
+                "scriptId": script_id.clone()
+            }),
+        );
+
+        let options = ReplayOptions {
+            speed_multiplier: settings.default_replay_speed,
+            countdown_ms: settings.default_countdown_ms,
+            use_original_timing: true,
+            skip_mouse_moves: settings.skip_mouse_move_noise,
+            loop_enabled: settings.default_loop_enabled,
+            loop_interval_ms: settings.default_loop_interval_ms,
+            fail_if_window_changed: None,
+        };
+
+        if let Err(error) = state.start_replay(app.clone(), script_id, options) {
+            let _ = app.emit(
+                "shortcut:error",
+                json!({
+                    "message": error.to_string()
+                }),
+            );
         }
     });
 }
@@ -81,12 +98,13 @@ pub fn reload_shortcuts(app: &AppHandle, state: &AppState) -> AppResult<()> {
     }
 
     let settings = state.db.get_settings()?;
+    let emergency_shortcut = normalize_accelerator(&settings.emergency_stop_shortcut)?;
     if !app
         .global_shortcut()
-        .is_registered(settings.emergency_stop_shortcut.as_str())
+        .is_registered(emergency_shortcut.as_str())
     {
         app.global_shortcut()
-            .register(settings.emergency_stop_shortcut.as_str())
+            .register(emergency_shortcut.as_str())
             .map_err(|error| {
                 AppError::invalid(format!("failed to register emergency shortcut: {error}"))
             })?;
@@ -100,12 +118,10 @@ pub fn register_binding(
     state: &AppState,
     binding: &ShortcutBinding,
 ) -> AppResult<()> {
-    if !app
-        .global_shortcut()
-        .is_registered(binding.accelerator.as_str())
-    {
+    let normalized = normalize_accelerator(&binding.accelerator)?;
+    if !app.global_shortcut().is_registered(normalized.as_str()) {
         app.global_shortcut()
-            .register(binding.accelerator.as_str())
+            .register(normalized.as_str())
             .map_err(|error| AppError::invalid(format!("failed to register shortcut: {error}")))?;
     }
 
@@ -113,34 +129,43 @@ pub fn register_binding(
         .shortcut_routes
         .lock()
         .expect("shortcut route lock poisoned")
-        .insert(binding.accelerator.clone(), binding.script_id.clone());
+        .insert(normalized, binding.script_id.clone());
 
     Ok(())
 }
 
 pub fn validate_shortcut(state: &AppState, accelerator: &str) -> AppResult<ShortcutValidation> {
-    let trimmed = accelerator.trim();
-    if trimmed.is_empty() {
+    if accelerator.trim().is_empty() {
         return Ok(invalid("shortcut is required"));
     }
 
-    if reserved_shortcuts().contains(&trimmed) {
+    let shortcut = match accelerator.trim().parse::<Shortcut>() {
+        Ok(shortcut) => shortcut,
+        Err(_) => {
+            return Ok(invalid(
+                "press one modifier plus one key, such as control+KeyR",
+            ));
+        }
+    };
+    let normalized = shortcut.into_string();
+
+    if !has_exactly_one_primary_modifier(shortcut) {
+        return Ok(invalid(
+            "shortcut must use exactly one modifier plus one key",
+        ));
+    }
+
+    if reserved_shortcuts().contains(&normalized.as_str()) {
         return Ok(invalid(
             "that shortcut is reserved by the operating system or app",
         ));
     }
 
-    if trimmed.parse::<Shortcut>().is_err() {
-        return Ok(invalid(
-            "use a shortcut like CommandOrControl+Alt+1 or CommandOrControl+Shift+R",
-        ));
-    }
-
-    if let Some(binding) = state.db.find_shortcut_by_accelerator(trimmed)? {
+    if let Some(binding) = find_shortcut_by_normalized_accelerator(state, &normalized)? {
         return Ok(ShortcutValidation {
             valid: false,
             reason: Some("shortcut is already assigned".to_string()),
-            normalized: Some(trimmed.to_string()),
+            normalized: Some(normalized),
             conflict_script_id: Some(binding.script_id),
         });
     }
@@ -148,7 +173,7 @@ pub fn validate_shortcut(state: &AppState, accelerator: &str) -> AppResult<Short
     Ok(ShortcutValidation {
         valid: true,
         reason: None,
-        normalized: Some(trimmed.to_string()),
+        normalized: Some(normalized),
         conflict_script_id: None,
     })
 }
@@ -162,9 +187,8 @@ pub fn bind_shortcut(
     let validation = validate_shortcut(state, accelerator)?;
     if !validation.valid {
         if validation.conflict_script_id.as_deref() == Some(script_id) {
-            return state
-                .db
-                .find_shortcut_by_accelerator(accelerator.trim())?
+            let normalized = normalize_accelerator(accelerator)?;
+            return find_shortcut_by_normalized_accelerator(state, &normalized)?
                 .ok_or_else(|| AppError::invalid("shortcut is not assigned"));
         }
 
@@ -211,9 +235,10 @@ pub fn unregister_accelerator(
     state: &AppState,
     accelerator: &str,
 ) -> AppResult<()> {
-    if app.global_shortcut().is_registered(accelerator) {
+    let normalized = normalize_accelerator(accelerator).unwrap_or_else(|_| accelerator.to_string());
+    if app.global_shortcut().is_registered(normalized.as_str()) {
         app.global_shortcut()
-            .unregister(accelerator)
+            .unregister(normalized.as_str())
             .map_err(|error| {
                 AppError::invalid(format!("failed to unregister shortcut: {error}"))
             })?;
@@ -223,8 +248,55 @@ pub fn unregister_accelerator(
         .shortcut_routes
         .lock()
         .expect("shortcut route lock poisoned")
+        .remove(&normalized);
+    state
+        .shortcut_routes
+        .lock()
+        .expect("shortcut route lock poisoned")
         .remove(accelerator);
     Ok(())
+}
+
+fn normalize_accelerator(accelerator: &str) -> AppResult<String> {
+    accelerator
+        .trim()
+        .parse::<Shortcut>()
+        .map(Shortcut::into_string)
+        .map_err(|_| AppError::invalid("shortcut is not valid"))
+}
+
+fn shortcut_matches(left: &str, right: &str) -> bool {
+    match (normalize_accelerator(left), normalize_accelerator(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => left.trim() == right.trim(),
+    }
+}
+
+fn find_shortcut_by_normalized_accelerator(
+    state: &AppState,
+    normalized: &str,
+) -> AppResult<Option<ShortcutBinding>> {
+    for binding in state.db.list_shortcuts()? {
+        if shortcut_matches(&binding.accelerator, normalized) {
+            return Ok(Some(binding));
+        }
+    }
+
+    Ok(None)
+}
+
+fn has_exactly_one_primary_modifier(shortcut: Shortcut) -> bool {
+    let primary_modifiers = [
+        Modifiers::SHIFT,
+        Modifiers::CONTROL,
+        Modifiers::ALT,
+        Modifiers::SUPER,
+    ];
+    primary_modifiers
+        .iter()
+        .filter(|modifier| shortcut.mods.contains(**modifier))
+        .count()
+        == 1
 }
 
 fn invalid(reason: impl Into<String>) -> ShortcutValidation {
@@ -238,9 +310,12 @@ fn invalid(reason: impl Into<String>) -> ShortcutValidation {
 
 fn reserved_shortcuts() -> &'static [&'static str] {
     &[
-        "CommandOrControl+Q",
-        "Alt+F4",
-        "CommandOrControl+Alt+Delete",
-        "CommandOrControl+Shift+Escape",
+        "control+KeyQ",
+        "super+KeyQ",
+        "alt+F4",
+        "control+alt+Delete",
+        "control+shift+Escape",
+        "super+alt+Delete",
+        "super+shift+Escape",
     ]
 }
